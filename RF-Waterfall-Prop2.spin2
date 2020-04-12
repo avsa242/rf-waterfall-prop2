@@ -1,0 +1,262 @@
+{
+    --------------------------------------------
+    Filename: RF-Waterfall-Prop2.spin2
+    Description: Display received power levels in the frequency domain
+        as a "waterfall"
+        Utilizes ISM-band transceiver IC's, e.g., the CC1101
+    Author: Jesse Burt
+    Copyright (c) 2020
+    Started: Apr 6, 2020
+    Updated: Apr 12, 2020
+    See end of file for terms of use.
+    --------------------------------------------
+}
+CON
+
+    ' 160MHz
+    XTAL            = cfg#XTAL
+    XDIV            = 2
+    XMUL            = 25
+    XDIVP           = cfg#XDIVP
+    XOSC            = cfg#XOSC
+    XSEL            = cfg#XSEL
+    XPPPP           = cfg#XPPPP
+    CLOCKFREQ       = XTAL / XDIV * XMUL / XDIVP
+    SETFREQ         = 1<<24 + (XDIV-1)<<18 + (XMUL-1)<<8 + XPPPP<<4 + XOSC<<2
+    ENAFREQ         = SETFREQ + XSEL
+
+    WIDTH           = 320
+    HEIGHT          = 240
+    XMAX            = WIDTH-1
+    YMAX            = HEIGHT-1
+    BUFFSZ          = WIDTH * HEIGHT
+    BPP             = 1
+    BPL             = WIDTH * BPP
+
+' User-modifiable constants
+    CS_PIN          = 16
+    SCK_PIN         = 18
+    MOSI_PIN        = 19
+    MISO_PIN        = 17
+    SCK_FREQ        = 5_000_000
+
+    SER_RX          = cfg#SER_RX
+    SER_TX          = cfg#SER_TX
+    SER_BAUD        = 2_000_000
+    LED             = cfg#LED1
+
+    VGA_BASEPIN     = 0                                     ' 0, 8, 16, 24, 32, 40, 48
+'                                                           Works with all basepins on the P2ES except 56
+
+VAR
+
+    long _palette[255]
+    byte _framebuffer[BUFFSZ]
+
+    byte _ser_cog, _vga_cog, _cc1101_cog
+    byte _offset
+
+OBJ
+
+    cfg         : "core.con.boardcfg.p2eval"
+    ser         : "com.serial.terminal.ansi"
+    time        : "time"
+    io          : "io"
+    vga         : "display.vga.bitmap-8bpp"
+    int         : "string.integer"
+    fnt         : "font.5x8"
+    cc1101      : "wireless.transceiver.cc1101.spi"
+
+PUB Main | lna, dvga, x, y, wh, ww, base_freq
+
+    Setup
+
+    base_freq := 433_898_700
+    cc1101.Idle
+    cc1101.ChannelSpacing(25390)
+    cc1101.AutoCal(1)
+    cc1101.CarrierFreq(base_freq)
+    cc1101.RXMode
+    cc1101.SyncWord($DEAD)
+    cc1101.SyncMode(7)
+    cc1101.CarrierSense(14)
+    cc1101.DVGAGain(-3)
+    cc1101.LNAGain(-17)
+    cc1101.PreambleQual(28)
+    cc1101.RXBandwidth(116)
+    cc1101.AGC(0)
+    cc1101.DCBlock(FALSE)
+
+    lna := dvga := 0
+    _offset := 175
+
+' Waterfall position, width, height
+    x := 30
+    y := 20
+    ww := 100
+    wh := 100
+
+    vga.position(0, 1)
+    vga.fgcolor(255)
+    vga.str(string("Base freq: "))
+    vga.str(int.decpadded(cc1101.CarrierFreq, 9))
+
+    vga.Box(x, y, x+ww, y+wh, 255, FALSE)                       ' Draw frame around waterfall
+    DrawScale(x, wh+y+5)                                        ' Draw the color scale (for RSSI)
+
+    repeat
+        Waterfall(x, y, x+ww, y+wh, base_freq)
+
+        case ser.rxcheck
+            "=":
+                lna := (lna + 1) <# 7
+                cc1101.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                ser.position(0, 5)
+                ser.printf("LNAGain: %d ", lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+            "-":
+                lna := (lna - 1) #> 0
+                cc1101.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                ser.position(0, 5)
+                ser.printf("LNAGain: %d ", lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+            "]":
+                dvga := (dvga + 1) <# 7
+                cc1101.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
+                ser.position(0, 6)
+                ser.printf("DVGAGain: %d ", lookupz(dvga: -3, -2, -1, 0))
+            "[":
+                dvga := (dvga - 1) #> 0
+                cc1101.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
+                ser.position(0, 6)
+                ser.printf("DVGAGain: %d ", lookupz(dvga: -3, -2, -1, 0))
+            ";":
+                _offset := (_offset - 1) #> 138
+                ser.position(0, 7)
+                ser.printf("Offset: %d", _offset)
+            "'":
+                _offset := (_offset + 1) <# 255
+                ser.position(0, 7)
+                ser.printf("Offset: %d", _offset)
+            OTHER:
+
+
+    FlashLED(LED, 100)
+
+PUB Waterfall(sx, sy, ex, ey, base_freq) | x, y, left, top, bottom, right, c, freqstep
+
+    left := sx + 1
+    top := sy + 1
+    bottom := ey - 1
+    right := ex - 1
+    freqstep := 20 * 397                                         ' CC1101 Freq resolution is 397Hz
+
+    repeat x from left to right
+'        cc1101.Channel(x-left)
+'        time.USleep(10)
+        cc1101.Carrierfreq(base_freq + (freqstep * (x-left)))
+        c := 0 #> (cc1101.RSSI+_offset) <# 255
+        vga.Plot(x, bottom, c)
+    vga.ScrollUp(left, top, right, bottom)
+
+PRI DrawScale(x, y) | idx, color, scl_height, grad_pos
+' Draw the color scale setup at program start
+    scl_height := 5
+    grad_pos := scl_height + 2
+    repeat idx from x to x+255
+        color := idx-x
+        vga.Line(idx, y, idx, y+scl_height, color)
+        case color                                              ' Draw graduations at each point
+            0, 32, 64, 96, 128, 160, 192, 255:                  '   along the scale
+                vga.Line(idx, y+grad_pos, idx, y+grad_pos+scl_height, 255)
+
+PUB Setup
+
+    clkset(ENAFREQ, CLOCKFREQ)
+    repeat until _ser_cog := ser.StartRXTX(SER_RX, SER_TX, 0, SER_BAUD)
+    ser.clear
+    ser.printf("Serial terminal started - p2 @ %dMHz (cog %d)\n", clkfreq/1000000, _ser_cog)
+    FullSpecPalette
+'    GreyScalePalette
+    if _vga_cog := vga.start(VGA_BASEPIN, @_framebuffer, @_palette, WIDTH, HEIGHT)
+        ser.printf("VGA 8bpp driver started (cog %d)\n", _vga_cog)
+'        vga.DrawTo(@_offscreenbuffer)
+        vga.FontAddress(fnt.BaseAddr)
+        vga.FontSize(6, 8)
+        vga.Clear
+    else
+        ser.printf("VGA 8bpp driver failed to start\n")
+        repeat
+
+    if _cc1101_cog := cc1101.Start (CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_FREQ)
+        ser.PrintF("CC1101 driver started (cog %d)\n", _cc1101_cog)
+    else
+        ser.PrintF("CC1101 driver failed to start - halting\n")
+        FlashLED (LED, 500)
+
+PUB GreyScalePalette | i
+
+    repeat i from 0 to 255
+        _palette[i] := 0 | (i << 16) | (i << 8) | i
+
+PUB FullSpecPalette | i, r, g, b, c
+' Set up palette
+    r := g := b := c := 0
+    repeat i from 0 to 255
+        case i
+            0..31:
+                r += 4
+                g := 0
+                b += 4
+            32..63:
+                r -= 4
+                g := 0
+                b := b
+            64..95:
+                r := 0
+                g += 4
+                b := b
+            96..127:
+                r := 0
+                g := g
+                b -= 4
+            128..159:
+                r += 4
+                g := g
+                b := b
+            160..191:
+                r := r
+                g -= 4
+                b := 0
+            192..254:
+                r := r
+                g += 4
+                b += 4
+            255:
+                r := g := b := 255
+
+        c := 0 | (r << 16) | (g << 8) | b
+        _palette[i] := c
+    _palette[0] := $00_00_00_00
+
+#include "lib.utility.spin2"
+
+{
+    --------------------------------------------------------------------------------------------------------
+    TERMS OF USE: MIT License
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+    associated documentation files (the "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+    following conditions:
+
+    The above copyright notice and this permission notice shall be included in all copies or substantial
+    portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+    --------------------------------------------------------------------------------------------------------
+}
+
