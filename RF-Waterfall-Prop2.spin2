@@ -13,7 +13,7 @@
 }
 CON
 
-    ' 160MHz
+    ' 250MHz
     XTAL            = cfg#XTAL
     XDIV            = 2
     XMUL            = 25
@@ -91,18 +91,17 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq
     _offset := 175
 
 ' Waterfall position, width, height
-    x := 30
+    x := 0
     y := 20
     ww := 100
     wh := 100
 
     vga.position(0, 1)
     vga.fgcolor(255)
-    vga.str(string("Base freq: "))
     vga.str(int.decpadded(cc1101.CarrierFreq, 9))
-
+    vga.str(string("Hz"))
     vga.Box(x, y, x+ww, y+wh, 255, FALSE)                       ' Draw frame around waterfall
-    DrawScale(x, wh+y+5)                                        ' Draw the color scale (for RSSI)
+    DrawScale(ww+5, y, wh)                                        ' Draw the color scale (for RSSI)
 
     repeat
         Waterfall(x, y, x+ww, y+wh, base_freq)
@@ -157,16 +156,15 @@ PUB Waterfall(sx, sy, ex, ey, base_freq) | x, y, left, top, bottom, right, c, fr
         vga.Plot(x, bottom, c)
     vga.ScrollUp(left, top, right, bottom)
 
-PRI DrawScale(x, y) | idx, color, scl_height, grad_pos
+PRI DrawScale(x, y, ht) | idx, color, scl_width, bottom, top, range
 ' Draw the color scale setup at program start
-    scl_height := 5
-    grad_pos := scl_height + 2
-    repeat idx from x to x+255
-        color := idx-x
-        vga.Line(idx, y, idx, y+scl_height, color)
-        case color                                              ' Draw graduations at each point
-            0, 32, 64, 96, 128, 160, 192, 255:                  '   along the scale
-                vga.Line(idx, y+grad_pos, idx, y+grad_pos+scl_height, 255)
+    range := bottom := y+ht
+    top := y
+    scl_width := 5
+
+    repeat idx from bottom to top
+        color := (range-idx) * 2                                ' Skip every other color in the scale
+        vga.Line(x, idx, x+scl_width, idx, color)               '   so most of it can be fit on screen
 
 PUB Setup
 
@@ -178,7 +176,6 @@ PUB Setup
 '    GreyScalePalette
     if _vga_cog := vga.start(VGA_BASEPIN, @_framebuffer, @_palette, WIDTH, HEIGHT)
         ser.printf("VGA 8bpp driver started (cog %d)\n", _vga_cog)
-'        vga.DrawTo(@_offscreenbuffer)
         vga.FontAddress(fnt.BaseAddr)
         vga.FontSize(6, 8)
         vga.Clear
