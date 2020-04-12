@@ -7,7 +7,7 @@ This is a P2X8C4M64P/Propeller 2 application that displays power levels received
 
 * Display a waterfall of band radio is tuned to
 * Change LNA, DVGA gains
-* Change  
+* Change color scale offset to improve display contrast
 
 ## Requirements
 
