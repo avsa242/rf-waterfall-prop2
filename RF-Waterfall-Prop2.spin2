@@ -73,22 +73,20 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
 
     Setup
 
-    base_freq := 433_898_700
-    cc1101.Idle
-    cc1101.ChannelSpacing(25390)
-    cc1101.AutoCal(1)
+    base_freq := 433_898_700                                    ' 300_000_000..348_000_000, 387_000_000..464_000_000, 779_000_000..928_000_000
+
+    cc1101.Idle                                                 ' Change to Idle while changing settings
+    cc1101.AutoCal(cc1101#IDLE_RXTX)
     cc1101.CarrierFreq(base_freq)
-    cc1101.RXMode
-    cc1101.SyncWord($DEAD)
-    cc1101.SyncMode(7)
+    cc1101.SyncMode(cc1101#SYNCMODE_3032_CS)
     cc1101.CarrierSense(14)
     cc1101.DVGAGain(-3)
     cc1101.LNAGain(-17)
-    cc1101.PreambleQual(28)
     cc1101.RXBandwidth(58)
     cc1101.IntFreq(380859)
-    cc1101.AGC(0)
+    cc1101.AGC(cc1101#AGC_NORMAL)
     cc1101.DCBlock(FALSE)
+    cc1101.RXMode
 
     lna := dvga := rxbw := 0
     intfreq := 380859
@@ -113,6 +111,7 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
         Waterfall(x, y, x+ww, y+wh, base_freq)
 
         if cmd := ser.rxcheck
+            cc1101.Idle
             case cmd
                 "=":
                     lna := (lna + 1) <# 7
@@ -139,42 +138,52 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
                 "p":
                     intfreq := (intfreq + 25390) <# 787109
                     cc1101.IntFreq(intfreq)
-                    ser.printf("\n%d\n", intfreq)
                 "o":
                     intfreq := (intfreq - 25390) #> 25390
                     cc1101.IntFreq(intfreq)
-                    ser.printf("\n%d\n", intfreq)
                 OTHER:
+            cc1101.RXMode
             DisplaySettings                                     ' Update the settings display
 
     FlashLED(LED, 100)
 
-PUB DisplaySettings
+PUB DisplaySettings | lna, dvga, rxbw, ifreq, pllcal
+
+    lna := cc1101.LNAGain
+    dvga := cc1101.DVGAGain
+    rxbw := cc1101.RXBandwidth
+    ifreq := cc1101.IntFreq
+    pllcal := cc1101.PLLCalibration
 
     vga.position(LABEL_COL, 17)
     vga.printf("LNA Gain: ")
     vga.position(DATA_COL, 17)
-    vga.printf("%ddB ", cc1101.LNAGain)
+    vga.printf("%ddB ", lna)
 
     vga.position(LABEL_COL, 18)
     vga.printf("DVGA Gain: ")
     vga.position(DATA_COL, 18)
-    vga.printf("%ddB ", cc1101.DVGAGain)
+    vga.printf("%ddB ", dvga)
 
     vga.position(LABEL_COL, 19)
     vga.printf("RX BW: ")
     vga.position(DATA_COL, 19)
-    vga.printf("%dkHz ", cc1101.RXBandwidth)
+    vga.printf("%dkHz ", rxbw)
 
     vga.position(LABEL_COL, 20)
     vga.printf("IF: ")
     vga.position(DATA_COL, 20)
-    vga.printf("%dkHz ", cc1101.IntFreq)
+    ifnot ifreq/1000 > (rxbw/2)
+        vga.fgcolor(190)
+    else
+        vga.fgcolor(255)
+    vga.printf("%dHz ", ifreq)
+    vga.fgcolor(255)
 
     vga.position(LABEL_COL, 21)
     vga.printf("PLL: ")
     vga.position(DATA_COL, 21)
-    vga.printf("%d ", cc1101.PLLCalibration)
+    vga.printf("%d ", pllcal)
 
 PUB Waterfall(sx, sy, ex, ey, base_freq) | x, y, left, top, bottom, right, c, freqstep
 
@@ -185,8 +194,6 @@ PUB Waterfall(sx, sy, ex, ey, base_freq) | x, y, left, top, bottom, right, c, fr
     freqstep := 20 * 397                                         ' CC1101 Freq resolution is 397Hz
 
     repeat x from left to right
-'        cc1101.Channel(x-left)
-'        time.USleep(10)
         cc1101.Carrierfreq(base_freq + (freqstep * (x-left)))
         c := 0 #> (cc1101.RSSI+_offset) <# 255
         vga.Plot(x, bottom, c)
