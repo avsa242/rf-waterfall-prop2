@@ -67,7 +67,7 @@ OBJ
     fnt         : "font.5x8"
     cc1101      : "wireless.transceiver.cc1101.spi"
 
-PUB Main | lna, dvga, x, y, wh, ww, base_freq
+PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw
 
     Setup
 
@@ -83,11 +83,11 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq
     cc1101.DVGAGain(-3)
     cc1101.LNAGain(-17)
     cc1101.PreambleQual(28)
-    cc1101.RXBandwidth(116)
+    cc1101.RXBandwidth(58)
     cc1101.AGC(0)
     cc1101.DCBlock(FALSE)
 
-    lna := dvga := 0
+    lna := dvga := rxbw := 0
     _offset := 175
 
 ' Waterfall position, width, height
@@ -101,44 +101,58 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq
     vga.str(int.decpadded(cc1101.CarrierFreq, 9))
     vga.str(string("Hz"))
     vga.Box(x, y, x+ww, y+wh, 255, FALSE)                       ' Draw frame around waterfall
+    DisplaySettings
+
     DrawScale(ww+5, y, wh)                                        ' Draw the color scale (for RSSI)
 
     repeat
         Waterfall(x, y, x+ww, y+wh, base_freq)
 
-        case ser.rxcheck
-            "=":
-                lna := (lna + 1) <# 7
-                cc1101.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
-                ser.position(0, 5)
-                ser.printf("LNAGain: %d ", lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
-            "-":
-                lna := (lna - 1) #> 0
-                cc1101.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
-                ser.position(0, 5)
-                ser.printf("LNAGain: %d ", lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
-            "]":
-                dvga := (dvga + 1) <# 7
-                cc1101.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
-                ser.position(0, 6)
-                ser.printf("DVGAGain: %d ", lookupz(dvga: -3, -2, -1, 0))
-            "[":
-                dvga := (dvga - 1) #> 0
-                cc1101.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
-                ser.position(0, 6)
-                ser.printf("DVGAGain: %d ", lookupz(dvga: -3, -2, -1, 0))
-            ";":
-                _offset := (_offset - 1) #> 138
-                ser.position(0, 7)
-                ser.printf("Offset: %d", _offset)
-            "'":
-                _offset := (_offset + 1) <# 255
-                ser.position(0, 7)
-                ser.printf("Offset: %d", _offset)
-            OTHER:
-
+        if cmd := ser.rxcheck
+            case cmd
+                "=":
+                    lna := (lna + 1) <# 7
+                    cc1101.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                "-":
+                    lna := (lna - 1) #> 0
+                    cc1101.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                "]":
+                    dvga := (dvga + 1) <# 7
+                    cc1101.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
+                "[":
+                    dvga := (dvga - 1) #> 0
+                    cc1101.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
+                ";":
+                    _offset := (_offset - 1) #> 138
+                "'":
+                    _offset := (_offset + 1) <# 255
+                ".":
+                    rxbw := (rxbw + 1) <# 15
+                    cc1101.RXBandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                ",":
+                    rxbw := (rxbw - 1) #> 0
+                    cc1101.RXBandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                OTHER:
+            DisplaySettings                                     ' Update the settings display
 
     FlashLED(LED, 100)
+
+PUB DisplaySettings
+
+    vga.position(0, 17)
+    vga.str(string("LNA Gain: "))
+    vga.str(int.dec(cc1101.LNAGain))
+    vga.str(string("dB "))
+
+    vga.position(0, 18)
+    vga.str(string("DVGA Gain: "))
+    vga.str(int.dec(cc1101.DVGAGain))
+    vga.str(string("dB "))
+
+    vga.position(0, 19)
+    vga.str(string("RX BW: "))
+    vga.str(int.dec(cc1101.RXBandwidth))
+    vga.str(string("kHz "))
 
 PUB Waterfall(sx, sy, ex, ey, base_freq) | x, y, left, top, bottom, right, c, freqstep
 

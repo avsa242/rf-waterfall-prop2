@@ -26,6 +26,7 @@ This is a P2X8C4M64P/Propeller 2 application that displays power levels received
 
 - [ ] Add some basic controls (e.g., base freq, RX BW, gain, etc)
 - [ ] Add some more instrumentation (display various current radio settings)
+- [ ] Add marker(s)
 - [ ] Add support for other radios (CC2500, SX1231, SX1276, etc)
 - [ ] Add support for demodulation
 - [ ] Save demodulated data to SD
