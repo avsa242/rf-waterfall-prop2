@@ -139,6 +139,10 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
                 "o":
                     intfreq := (intfreq - 25390) #> 25390
                     cc1101.IntFreq(intfreq)
+                "s":
+                    _span -= 1000
+                "S":
+                    _span += 1000
 
                 OTHER:
             cc1101.RXMode

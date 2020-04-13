@@ -10,6 +10,7 @@ This is a P2X8C4M64P/Propeller 2 application that displays power levels received
 * Change receiver bandwidth
 * Change IF
 * Change color scale offset to improve display contrast
+* Change waterfall span
 
 ## Requirements
 
@@ -26,8 +27,9 @@ This is a P2X8C4M64P/Propeller 2 application that displays power levels received
 
 ## TODO
 
-- [ ] Add some basic controls (e.g., base freq, RX BW, gain, etc)
-- [ ] Add some more instrumentation (display various current radio settings)
+- [x] Add some basic controls (e.g., base freq, RX BW, gain, etc)
+- [x] Add some more instrumentation (display various current radio settings)
+- [ ] Add peak hold/reset
 - [ ] Add marker(s)
 - [ ] Add support for other radios (CC2500, SX1231, SX1276, etc)
 - [ ] Add support for demodulation
