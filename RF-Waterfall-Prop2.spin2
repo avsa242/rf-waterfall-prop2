@@ -53,6 +53,7 @@ CON
 VAR
 
     long _palette[255]
+    long _basefreq, _span
     byte _framebuffer[BUFFSZ]
 
     byte _ser_cog, _vga_cog, _cc1101_cog
@@ -73,11 +74,12 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
 
     Setup
 
-    base_freq := 433_898_700                                    ' 300_000_000..348_000_000, 387_000_000..464_000_000, 779_000_000..928_000_000
+    _basefreq := 433_500_000                                    ' 300_000_000..348_000_000, 387_000_000..464_000_000, 779_000_000..928_000_000
+    _span := 1_000_000                                          ' Freq span from base freq
 
     cc1101.Idle                                                 ' Change to Idle while changing settings
     cc1101.AutoCal(cc1101#IDLE_RXTX)
-    cc1101.CarrierFreq(base_freq)
+    cc1101.CarrierFreq(_basefreq)
     cc1101.SyncMode(cc1101#SYNCMODE_3032_CS)
     cc1101.CarrierSense(14)
     cc1101.DVGAGain(-3)
@@ -95,20 +97,16 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
 ' Waterfall position, width, height
     x := 0
     y := 20
-    ww := 100
+    ww := 300
     wh := 100
 
-    vga.position(0, 1)
-    vga.fgcolor(255)
-    vga.str(int.decpadded(cc1101.CarrierFreq, 9))
-    vga.str(string("Hz"))
     vga.Box(x, y, x+ww, y+wh, 255, FALSE)                       ' Draw frame around waterfall
     DisplaySettings
 
-    DrawScale(ww+5, y, wh)                                        ' Draw the color scale (for RSSI)
+    DrawScale(ww+5, y, wh)                                      ' Draw the color scale (for RSSI)
 
     repeat
-        Waterfall(x, y, x+ww, y+wh, base_freq)
+        Waterfall(x, y, x+ww, y+wh, _basefreq, _span)
 
         if cmd := ser.rxcheck
             cc1101.Idle
@@ -141,19 +139,23 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
                 "o":
                     intfreq := (intfreq - 25390) #> 25390
                     cc1101.IntFreq(intfreq)
+
                 OTHER:
             cc1101.RXMode
             DisplaySettings                                     ' Update the settings display
 
     FlashLED(LED, 100)
 
-PUB DisplaySettings | lna, dvga, rxbw, ifreq, pllcal
+PUB DisplaySettings | basefreq, lna, dvga, rxbw, ifreq, pllcal
 
     lna := cc1101.LNAGain
     dvga := cc1101.DVGAGain
     rxbw := cc1101.RXBandwidth
     ifreq := cc1101.IntFreq
     pllcal := cc1101.PLLCalibration
+
+    vga.position(0, 1)
+    vga.printf("%dHz   Span: %dHz", _basefreq, _span)
 
     vga.position(LABEL_COL, 17)
     vga.printf("LNA Gain: ")
@@ -185,13 +187,13 @@ PUB DisplaySettings | lna, dvga, rxbw, ifreq, pllcal
     vga.position(DATA_COL, 21)
     vga.printf("%d ", pllcal)
 
-PUB Waterfall(sx, sy, ex, ey, base_freq) | x, y, left, top, bottom, right, c, freqstep
+PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right, c, freqstep
 
     left := sx + 1
     top := sy + 1
     bottom := ey - 1
     right := ex - 1
-    freqstep := 20 * 397                                         ' CC1101 Freq resolution is 397Hz
+    freqstep := (span/(ex-sx))                                  ' *CC1101 Freq resolution is actually 397Hz
 
     repeat x from left to right
         cc1101.Carrierfreq(base_freq + (freqstep * (x-left)))
