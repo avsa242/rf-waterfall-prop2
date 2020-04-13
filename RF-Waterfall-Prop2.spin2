@@ -54,6 +54,8 @@ VAR
 
     long _palette[255]
     long _basefreq, _span
+
+    word _wf_x, _wf_y, _wf_width, _wf_height
     byte _framebuffer[BUFFSZ]
 
     byte _ser_cog, _vga_cog, _cc1101_cog
@@ -70,7 +72,7 @@ OBJ
     fnt         : "font.5x8"
     cc1101      : "wireless.transceiver.cc1101.spi"
 
-PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
+PUB Main | lna, dvga, x, y, base_freq, cmd, rxbw, intfreq
 
     Setup
 
@@ -95,18 +97,18 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
     _offset := 175
 
 ' Waterfall position, width, height
-    x := 0
-    y := 48
-    ww := 300
-    wh := 100
+    _wf_x := 0
+    _wf_y := vga.FontHeight * 6
+    _wf_width := 300
+    _wf_height := (vga.FontHeight * 12)-4
 
-    vga.Box(x, y, x+ww, y+wh, 255, FALSE)                       ' Draw frame around waterfall
+    vga.Box(_wf_x, _wf_y, (_wf_x + _wf_width), (_wf_y + _wf_height), 255, FALSE)                       ' Draw frame around waterfall
     DisplaySettings
 
-    DrawScale(ww+5, y, wh)                                      ' Draw the color scale (for RSSI)
+    DrawScale(_wf_width+5, _wf_y, _wf_height)                                      ' Draw the color scale (for RSSI)
 
     repeat
-        Waterfall(x, y, x+ww, y+wh, _basefreq, _span)
+        Waterfall(_wf_x, _wf_y, _wf_x+_wf_width, _wf_y+_wf_height, _basefreq, _span)
 
         if lookdown(cmd := ser.rxcheck: 32..127)
             ser.printf("debug\n")
@@ -151,7 +153,7 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
 
     FlashLED(LED, 100)
 
-PUB DisplaySettings | basefreq, lna, dvga, rxbw, ifreq, pllcal
+PUB DisplaySettings | basefreq, lna, dvga, rxbw, ifreq, pllcal, startrow
 
     lna := cc1101.LNAGain
     dvga := cc1101.DVGAGain
@@ -162,35 +164,32 @@ PUB DisplaySettings | basefreq, lna, dvga, rxbw, ifreq, pllcal
     vga.position(0, 0)
     vga.printf("%dHz   Span: %dHz", _basefreq, _span)
 
-    vga.position(LABEL_COL, 19)
+    startrow := ((_wf_y + _wf_height+4) / vga.FontHeight)
+
+    vga.position(LABEL_COL, startrow)
     vga.printf("LNA Gain: ")
-    vga.position(DATA_COL, 19)
+    vga.position(DATA_COL, startrow)
     vga.printf("%ddB ", lna)
 
-    vga.position(LABEL_COL, 20)
+    vga.position(LABEL_COL, startrow+1)
     vga.printf("DVGA Gain: ")
-    vga.position(DATA_COL, 20)
+    vga.position(DATA_COL, startrow+1)
     vga.printf("%ddB ", dvga)
 
-    vga.position(LABEL_COL, 21)
+    vga.position(LABEL_COL, startrow+2)
     vga.printf("RX BW: ")
-    vga.position(DATA_COL, 21)
+    vga.position(DATA_COL, startrow+2)
     vga.printf("%dkHz ", rxbw)
 
-    vga.position(LABEL_COL, 22)
+    vga.position(LABEL_COL, startrow+3)
     vga.printf("IF: ")
-    vga.position(DATA_COL, 22)
+    vga.position(DATA_COL, startrow+3)
     ifnot ifreq/1000 > (rxbw/2)
         vga.fgcolor(190)
     else
         vga.fgcolor(255)
     vga.printf("%dHz ", ifreq)
     vga.fgcolor(255)
-
-    vga.position(LABEL_COL, 23)
-    vga.printf("PLL: ")
-    vga.position(DATA_COL, 23)
-    vga.printf("%d ", pllcal)
 
 PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right, c, freqstep
 
@@ -209,7 +208,7 @@ PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right,
 '        vga.Plot(x, (y+1) <# (sy-2), 0)
 '        vga.Line(x, sy-1, x, y+1, 0)
         vga.Plot(x, y <# (sy-2), 190)
-        vga.Line(x, sy-1, x, (y+1) <# (sy-2), 255)
+        vga.Line(x, sy-1, x, (y+1) <# (sy-2), 0)
     vga.ScrollUp(left, top, right, bottom)
 
 PRI DrawScale(x, y, ht) | idx, color, scl_width, bottom, top, range
