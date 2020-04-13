@@ -14,7 +14,7 @@ This is a P2X8C4M64P/Propeller 2 application that displays power levels received
 
 ## Requirements
 
-* P2 rev B or newer silicon. Default clock is 160MHz, though 250MHz or greater is strongly recommended.
+* P2 rev B or newer silicon. 250MHz or greater clock is strongly recommended (default is 250MHz)
 
 ## Compiler Compatibility
 
