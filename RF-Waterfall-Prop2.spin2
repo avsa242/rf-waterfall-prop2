@@ -7,7 +7,7 @@
     Author: Jesse Burt
     Copyright (c) 2020
     Started: Apr 6, 2020
-    Updated: Apr 12, 2020
+    Updated: Apr 13, 2020
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -96,7 +96,7 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
 
 ' Waterfall position, width, height
     x := 0
-    y := 20
+    y := 48
     ww := 300
     wh := 100
 
@@ -108,7 +108,8 @@ PUB Main | lna, dvga, x, y, wh, ww, base_freq, cmd, rxbw, intfreq
     repeat
         Waterfall(x, y, x+ww, y+wh, _basefreq, _span)
 
-        if cmd := ser.rxcheck
+        if lookdown(cmd := ser.rxcheck: 32..127)
+            ser.printf("debug\n")
             cc1101.Idle
             case cmd
                 "=":
@@ -158,27 +159,27 @@ PUB DisplaySettings | basefreq, lna, dvga, rxbw, ifreq, pllcal
     ifreq := cc1101.IntFreq
     pllcal := cc1101.PLLCalibration
 
-    vga.position(0, 1)
+    vga.position(0, 0)
     vga.printf("%dHz   Span: %dHz", _basefreq, _span)
 
-    vga.position(LABEL_COL, 17)
+    vga.position(LABEL_COL, 19)
     vga.printf("LNA Gain: ")
-    vga.position(DATA_COL, 17)
+    vga.position(DATA_COL, 19)
     vga.printf("%ddB ", lna)
 
-    vga.position(LABEL_COL, 18)
+    vga.position(LABEL_COL, 20)
     vga.printf("DVGA Gain: ")
-    vga.position(DATA_COL, 18)
+    vga.position(DATA_COL, 20)
     vga.printf("%ddB ", dvga)
 
-    vga.position(LABEL_COL, 19)
+    vga.position(LABEL_COL, 21)
     vga.printf("RX BW: ")
-    vga.position(DATA_COL, 19)
+    vga.position(DATA_COL, 21)
     vga.printf("%dkHz ", rxbw)
 
-    vga.position(LABEL_COL, 20)
+    vga.position(LABEL_COL, 22)
     vga.printf("IF: ")
-    vga.position(DATA_COL, 20)
+    vga.position(DATA_COL, 22)
     ifnot ifreq/1000 > (rxbw/2)
         vga.fgcolor(190)
     else
@@ -186,9 +187,9 @@ PUB DisplaySettings | basefreq, lna, dvga, rxbw, ifreq, pllcal
     vga.printf("%dHz ", ifreq)
     vga.fgcolor(255)
 
-    vga.position(LABEL_COL, 21)
+    vga.position(LABEL_COL, 23)
     vga.printf("PLL: ")
-    vga.position(DATA_COL, 21)
+    vga.position(DATA_COL, 23)
     vga.printf("%d ", pllcal)
 
 PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right, c, freqstep
@@ -203,6 +204,12 @@ PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right,
         cc1101.Carrierfreq(base_freq + (freqstep * (x-left)))
         c := 0 #> (cc1101.RSSI+_offset) <# 255
         vga.Plot(x, bottom, c)
+        y := sy-(c/3)
+'        y := sy-2-(c/2)+40
+'        vga.Plot(x, (y+1) <# (sy-2), 0)
+'        vga.Line(x, sy-1, x, y+1, 0)
+        vga.Plot(x, y <# (sy-2), 190)
+        vga.Line(x, sy-1, x, (y+1) <# (sy-2), 255)
     vga.ScrollUp(left, top, right, bottom)
 
 PRI DrawScale(x, y, ht) | idx, color, scl_width, bottom, top, range
