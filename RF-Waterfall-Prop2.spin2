@@ -161,6 +161,7 @@ PUB DisplaySettings | basefreq, lna, dvga, rxbw, ifreq, pllcal, startrow
     ifreq := cc1101.IntFreq
     pllcal := cc1101.PLLCalibration
 
+    vga.FGColor(255)
     vga.position(0, 0)
     vga.printf("%dHz   Span: %dHz", _basefreq, _span)
 
@@ -202,14 +203,12 @@ PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right,
     repeat x from left to right
         cc1101.Carrierfreq(base_freq + (freqstep * (x-left)))
         c := 0 #> (cc1101.RSSI+_offset) <# 255
-        vga.Plot(x, bottom, c)
-        y := sy-(c/3)
-'        y := sy-2-(c/2)+40
-'        vga.Plot(x, (y+1) <# (sy-2), 0)
-'        vga.Line(x, sy-1, x, y+1, 0)
-        vga.Plot(x, y <# (sy-2), 190)
-        vga.Line(x, sy-1, x, (y+1) <# (sy-2), 0)
-    vga.ScrollUp(left, top, right, bottom)
+        vga.Plot(x, top, c)
+        y := sy-(c/3)+5
+
+        vga.Plot(x, y-1 <# (sy-2), 127)
+        vga.Line(x, sy-1, x, y <# (sy-2), 0)
+    vga.ScrollDown(left, top, right, bottom)
 
 PRI DrawScale(x, y, ht) | idx, color, scl_width, bottom, top, range
 ' Draw the color scale setup at program start

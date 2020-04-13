@@ -33,4 +33,5 @@ This is a P2X8C4M64P/Propeller 2 application that displays power levels received
 - [ ] Add marker(s)
 - [ ] Add support for other radios (CC2500, SX1231, SX1276, etc)
 - [ ] Add support for demodulation
+- [ ] Save screenshot to SD
 - [ ] Save demodulated data to SD
