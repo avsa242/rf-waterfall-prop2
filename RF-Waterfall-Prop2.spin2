@@ -88,7 +88,7 @@ PUB Main | lna, dvga, cmd, rxbw, intfreq
     cc1101.LNAGain(-17)
     cc1101.RXBandwidth(58)
     cc1101.IntFreq(380859)
-    cc1101.AGC(cc1101#AGC_NORMAL)
+    cc1101.AGCMode(cc1101#AGC_NORMAL)
     cc1101.DCBlock(FALSE)
     cc1101.RXMode
 
@@ -152,13 +152,12 @@ PUB Main | lna, dvga, cmd, rxbw, intfreq
 
     FlashLED(LED, 100)
 
-PUB DisplaySettings | basefreq, lna, dvga, rxbw, ifreq, pllcal, startrow
+PUB DisplaySettings | basefreq, lna, dvga, rxbw, ifreq, startrow
 
     lna := cc1101.LNAGain
     dvga := cc1101.DVGAGain
     rxbw := cc1101.RXBandwidth
     ifreq := cc1101.IntFreq
-    pllcal := cc1101.PLLCalibration
 
     vga.FGColor(255)
     vga.position(0, 0)
