@@ -15,6 +15,7 @@ This is a P2X8C4M64P/Propeller 2 application that displays power levels received
 ## Requirements
 
 * P2 rev B or newer silicon. 250MHz or greater clock is strongly recommended (default is 250MHz)
+* CC1101 module (must be an *SPI*-connected module. There may be some that are intended to be used as wireless UARTs/"wireless serial ports" - these won't work)
 
 ## Compiler Compatibility
 
