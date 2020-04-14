@@ -7,7 +7,7 @@
     Author: Jesse Burt
     Copyright (c) 2020
     Started: Apr 6, 2020
-    Updated: Apr 13, 2020
+    Updated: Apr 14, 2020
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -72,7 +72,7 @@ OBJ
     fnt         : "font.5x8"
     cc1101      : "wireless.transceiver.cc1101.spi"
 
-PUB Main | lna, dvga, x, y, base_freq, cmd, rxbw, intfreq
+PUB Main | lna, dvga, cmd, rxbw, intfreq
 
     Setup
 
@@ -94,7 +94,7 @@ PUB Main | lna, dvga, x, y, base_freq, cmd, rxbw, intfreq
 
     lna := dvga := rxbw := 0
     intfreq := 380859
-    _offset := 175
+    _offset := 138 #> 138
 
 ' Waterfall position, width, height
     _wf_x := 0
@@ -111,7 +111,6 @@ PUB Main | lna, dvga, x, y, base_freq, cmd, rxbw, intfreq
         Waterfall(_wf_x, _wf_y, _wf_x+_wf_width, _wf_y+_wf_height, _basefreq, _span)
 
         if lookdown(cmd := ser.rxcheck: 32..127)
-            ser.printf("debug\n")
             cc1101.Idle
             case cmd
                 "=":
@@ -207,6 +206,7 @@ PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right,
         y := sy-(c/3)+5
 
         vga.Plot(x, y-1 <# (sy-2), 127)
+        vga.Plot(x, y-2 <# (sy-2), 0)
         vga.Line(x, sy-1, x, y <# (sy-2), 0)
     vga.ScrollDown(left, top, right, bottom)
 
