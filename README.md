@@ -1,23 +1,24 @@
 # RF-Waterfall
 --------------
 
-This is a P2X8C4M64P/Propeller 2 application that displays power levels received by a packet radio in the frequency domain as a "waterfall." It utilizes an ISM-band transceiver IC. Currently supported ICs: CC1101, SX1231
+This is a P2X8C4M64P/Propeller 2 application that displays power levels received by a packet radio in the frequency domain as a "waterfall." It utilizes one of a supported ISM-band transceiver IC.
 
 ## Salient Features
 
+* Supported transceivers: CC1101, CC2500, SX1231
 * Display a waterfall of band radio is tuned to
-* Change LNA (CC1101, SX1231), DVGA gains (CC1101)
-* Change receiver bandwidth (CC1101, SX1231)
-* Change IF (CC1101)
-* Change color scale offset to improve display contrast
+* Change LNA (CC1101, CC2500, SX1231), DVGA gains (CC1101, CC2500)
+* Change receiver bandwidth (CC1101, CC2500, SX1231)
+* Change IF (CC1101, CC2500)
+* Change color scale offset/reference level to improve display contrast
 * Change waterfall span
 * Change base freq
 
 ## Requirements
 
 * P2 rev B or newer silicon. 250MHz or greater clock is strongly recommended (default is 250MHz)
-* CC1101 module (must be an *SPI*-connected module. There may be some that are intended to be used as wireless UARTs/"wireless serial ports" - these won't work)
-* SX1231 module
+* Compatible RF module
+* NOTE: Module must allow direct/low-level programming of the transceiver IC. There exist some modules that are intended to be used as wireless UARTs/"wireless serial ports" - these won't work.
 
 ## Compiler Compatibility
 
@@ -39,9 +40,11 @@ This is a P2X8C4M64P/Propeller 2 application that displays power levels received
 - [x] Add support for SX1231
 - [ ] Add support for SX1276
 - [ ] Add support for SX1280
-- [ ] Add support for CC2500
+- [x] Add support for CC2500
 - [ ] Add support for SI4463
 - [ ] Add support for demodulation
 - [ ] Save screenshot to SD
 - [ ] Save history to SD
 - [ ] Save demodulated data to SD
+- [ ] Change base frequency to center frequency (likely more familiar coming from PC-based SDR software)
+- [ ] Add reference level indicator to color scale

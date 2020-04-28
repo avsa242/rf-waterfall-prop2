@@ -1,12 +1,12 @@
 {
     --------------------------------------------
-    Filename: RF-Waterfall-CC1101.spin2
+    Filename: RF-Waterfall-CC2500.spin2
     Description: Display received power levels in the frequency domain
         as a "waterfall"
-        Utilizes ISM-band transceiver IC's (CC1101 version)
+        Utilizes ISM-band transceiver IC's (CC2500 version)
     Author: Jesse Burt
     Copyright (c) 2020
-    Started: Apr 6, 2020
+    Started: Apr 28, 2020
     Updated: Apr 28, 2020
     See end of file for terms of use.
     --------------------------------------------
@@ -36,9 +36,9 @@ CON
     LABEL_COL       = 0
     DATA_COL        = 11
 ' User-modifiable constants
-' CC1101
-    CS_PIN          = 16
-    SCK_PIN         = 18
+' CC2500
+    CS_PIN          = 43
+    SCK_PIN         = 41
     MOSI_PIN        = SCK_PIN+1                             ' This pin relationship is mandatory
     MISO_PIN        = SCK_PIN-1                             '
     SCK_FREQ        = 6_500_000
@@ -61,7 +61,7 @@ VAR
     word _wf_x, _wf_y, _wf_width, _wf_height
     byte _framebuffer[BUFFSZ]
 
-    byte _ser_cog, _vga_cog, _cc1101_cog
+    byte _ser_cog, _vga_cog, _cc2500_cog
     byte _offset
 
 OBJ
@@ -73,7 +73,7 @@ OBJ
     vga         : "display.vga.bitmap-8bpp"
     int         : "string.integer"
     fnt         : "font.5x8"
-    cc1101      : "wireless.transceiver.cc1101.spi"
+    cc2500      : "wireless.transceiver.cc2500.spi"
 
 PUB Main | lna, dvga, cmd, rxbw, intfreq
 
@@ -81,21 +81,21 @@ PUB Main | lna, dvga, cmd, rxbw, intfreq
 '    GreyScalePalette
     Setup
 
-    _basefreq := 433_500_000                                    ' 300_000_000..348_000_000, 387_000_000..464_000_000, 779_000_000..928_000_000
+    _basefreq := 2_400_000                                      ' 2_400_000..2_483_500 (kHz)
     _span := 1_000_000                                          ' Freq span from base freq
 
-    cc1101.Idle                                                 ' Change to Idle while changing settings
-    cc1101.AutoCal(cc1101#IDLE_RXTX)
-    cc1101.CarrierFreq(_basefreq)
-    cc1101.SyncMode(cc1101#SYNCMODE_3032_CS)
-    cc1101.CarrierSense(14)
-    cc1101.DVGAGain(-3)
-    cc1101.LNAGain(-17)
-    cc1101.RXBandwidth(58)
-    cc1101.IntFreq(380859)
-    cc1101.AGCMode(cc1101#AGC_NORMAL)
-    cc1101.DCBlock(FALSE)
-    cc1101.RXMode
+    cc2500.Idle                                                 ' Change to Idle while changing settings
+    cc2500.AutoCal(cc2500#IDLE_RXTX)
+    cc2500.CarrierFreq(_basefreq)
+    cc2500.SyncMode(cc2500#SYNCMODE_3032_CS)
+    cc2500.CarrierSense(14)
+    cc2500.DVGAGain(-3)
+    cc2500.LNAGain(-17)
+    cc2500.RXBandwidth(58)
+    cc2500.IntFreq(380859)
+    cc2500.AGCMode(cc2500#AGC_OFF)                              ' AGC_NORMAL, AGC_OFF
+    cc2500.DCBlock(FALSE)
+    cc2500.RXMode
 
     lna := dvga := rxbw := 0
     intfreq := 380859
@@ -115,44 +115,44 @@ PUB Main | lna, dvga, cmd, rxbw, intfreq
     repeat
         Waterfall(_wf_x, _wf_y, _wf_width, _wf_height, _basefreq, _span)
         if lookdown(cmd := ser.rxcheck: 32..127)
-            cc1101.Idle
+            cc2500.Idle
             case cmd
                 "=":
                     lna := (lna + 1) <# 7
-                    cc1101.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                    cc2500.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
                 "-":
                     lna := (lna - 1) #> 0
-                    cc1101.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                    cc2500.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
                 "]":
                     dvga := (dvga + 1) <# 7
-                    cc1101.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
+                    cc2500.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
                 "[":
                     dvga := (dvga - 1) #> 0
-                    cc1101.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
+                    cc2500.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
                 ";":
                     _offset := (_offset - 1) #> 138
                 "'":
                     _offset := (_offset + 1) <# 255
                 ".":
                     rxbw := (rxbw + 1) <# 15
-                    cc1101.RXBandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                    cc2500.RXBandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
                 ",":
                     rxbw := (rxbw - 1) #> 0
-                    cc1101.RXBandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                    cc2500.RXBandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
                 "p":
                     intfreq := (intfreq + 25390) <# 787109
-                    cc1101.IntFreq(intfreq)
+                    cc2500.IntFreq(intfreq)
                 "o":
                     intfreq := (intfreq - 25390) #> 25390
-                    cc1101.IntFreq(intfreq)
+                    cc2500.IntFreq(intfreq)
                 "s":
                     _span := (_span - 10_000) #> 10_000
                 "S":
                     _span := (_span + 10_000) <# 5_000_000
                 "b":
-                    _basefreq := (_basefreq - 50_000) #> 300_000_000
+                    _basefreq := (_basefreq - 500) #> 2_400_000
                 "B":
-                    _basefreq := (_basefreq + 50_000) <# 928_000_000
+                    _basefreq := (_basefreq + 500) <# 2_483_500
                 "d":
                     _dly := (_dly-1) #> 0
                     ser.printf("%d\n", _dly)
@@ -162,21 +162,21 @@ PUB Main | lna, dvga, cmd, rxbw, intfreq
                     ser.printf("%d\n", _dly)
 
                 OTHER:
-            cc1101.RXMode
+            cc2500.RXMode
             DisplaySettings                                     ' Update the settings display
 
 PUB DisplaySettings | basefreq, span, lna, dvga, rxbw, ifreq, startrow
 
-    lna := cc1101.LNAGain
-    dvga := cc1101.DVGAGain
-    rxbw := cc1101.RXBandwidth
-    ifreq := cc1101.IntFreq
+    lna := cc2500.LNAGain
+    dvga := cc2500.DVGAGain
+    rxbw := cc2500.RXBandwidth
+    ifreq := cc2500.IntFreq
 
     vga.FGColor(255)
     vga.position(0, 0)
 
     DecThousands(_basefreq, ",") ' XXX should be able to use the return value from this, but it doesn't work with the vga object
-    vga.printf("%sHz", @_strtemp)
+    vga.printf("%skHz", @_strtemp)
     DecThousands(_span, ",")
     vga.printf("   Span: %sHz   ", @_strtemp)
 
@@ -213,20 +213,27 @@ PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right,
     top := sy + 1
     bottom := ey - 1
     right := ex - 1
-    freqstep := (span/(ex-sx))                                  ' *CC1101 Freq resolution is actually 397Hz
-
+    freqstep := span / (ex-sx)                                  ' *CC2500 Freq resolution is actually 397Hz
+' span = 1_000_000
+' sx = 0
+' ex = 300
+' --------
+' freqstep = 3333 (/ 1000 = 3.333)
+' left = 1
+' base_freq = 2_400_000
+' (2_400_000 + (3 * (0-1)))
     vga.WaitVSync
     repeat x from left to right
-        cc1101.Carrierfreq(base_freq + (freqstep * (x-left)))
+        cc2500.Carrierfreq(base_freq + (freqstep * (x-left)) / 1000)
 '        time.USleep(_dly)
-        c := (cc1101.RSSI+_offset)
+        c := (cc2500.RSSI+_offset)
         vga.Plot(x, top, c)
-
+{
         y := sy-(c/3)+5                                         ' Plot above waterfall
         vga.Plot(x, y-1 <# (sy-2), 127)                         '
         vga.Plot(x, y-2 <# (sy-2), 0)                           '
         vga.Line(x, sy-1, x, y <# (sy-2), 0)                    '
-
+}
     vga.ScrollDown(left, top, right, bottom)
 
 PRI DrawScale(x, y, ht) | idx, color, scl_width, bottom, top, range
@@ -292,10 +299,10 @@ PUB Setup
         ser.printf("VGA 8bpp driver failed to start\n")
         repeat
 
-    if _cc1101_cog := cc1101.Start (CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_FREQ)
-        ser.PrintF("CC1101 driver started (cog %d)\n", _cc1101_cog)
+    if _cc2500_cog := cc2500.Start (CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_FREQ)
+        ser.PrintF("CC2500 driver started (cog %d)\n", _cc2500_cog)
     else
-        ser.PrintF("CC1101 driver failed to start - halting\n")
+        ser.PrintF("CC2500 driver failed to start - halting\n")
         FlashLED (LED, 500)
 
 PUB GreyScalePalette | i
