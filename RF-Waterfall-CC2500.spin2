@@ -36,6 +36,7 @@ VAR
 
     long _basefreq, _span
     long _dly
+    long _rssi[320], _rssi_len
 
     word _wf_x, _wf_y, _wf_width, _wf_height
     byte _framebuffer[BUFFSZ]
@@ -51,6 +52,7 @@ OBJ
     fnt:    "font.5x8"
     cc2500: "wireless.transceiver.cc2500" | CS=0, SCK=1, MOSI=2, MISO=3, SPI_FREQ=6_500_000
     str:    "string"
+    waterfall:  "metrology.waterfall"
 
 PUB main() | lna, dvga, cmd, rxbw, intfreq
 
@@ -80,19 +82,17 @@ PUB main() | lna, dvga, cmd, rxbw, intfreq
     _offset := 138 #> 138
 
     { waterfall position, width, height }
-    _wf_x := 0
-    _wf_y := vga.font_height() * 6              ' snap to text rows
-    _wf_width := _wf_x+300
-    _wf_height := _wf_y+(vga.font_height() * 12)-4
+    _rssi_len := 300
+    waterfall.init(0, vga.font_height() * 6, _rssi_len, (vga.font_height() * 12)-4, @vga, @_rssi, _rssi_len)
+    waterfall.set_color_scale(1)
 
-    { Draw frame around waterfall }
-    vga.box(_wf_x, _wf_y, _wf_width, _wf_height, 255, FALSE)
     display_settings()
 
     { Draw the color scale (for RSSI) }
-    draw_scale(_wf_width+5, _wf_y, _wf_height-_wf_y)
+    draw_scale(waterfall._right+5, waterfall._sy, waterfall._height-waterfall._sy/4)
     repeat
-        waterfall(_wf_x, _wf_y, _wf_width, _wf_height, _basefreq, _span)
+        acquire_rssi()
+        waterfall.draw_framed()
         if ( lookdown(cmd := ser.rx_check(): 32..127) )
             case cmd
                 "=":
@@ -158,7 +158,7 @@ PUB display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
     vga.printf(@"%skHz   ", dec_sep(_basefreq, ","))
     vga.printf(@"Span: %sHz", dec_sep(_span, ","))
 
-    startrow := ((_wf_y + _wf_height+4) / vga.font_height())
+    startrow := (waterfall._bottom+8) / vga.font_height()
 
     vga.pos_xy(LABEL_COL, startrow)
     vga.printf(@"LNA Gain: ")
@@ -185,34 +185,13 @@ PUB display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
     vga.printf(@"%dHz ", ifreq)
     vga.fgcolor(255)
 
-PUB waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right, c, freqstep
+pub acquire_rssi() | r, x
 
-    left := sx + 1
-    top := sy + 1
-    bottom := ey - 1
-    right := ex - 1
-    freqstep := span / (ex-sx)                                  ' *CC2500 Freq resolution is actually 397Hz
-' span = 1_000_000
-' sx = 0
-' ex = 300
-' --------
-' freqstep = 3333 (/ 1000 = 3.333)
-' left = 1
-' base_freq = 2_400_000
-' (2_400_000 + (3 * (0-1)))
-    vga.wait_vsync()
-    repeat x from left to right
-        cc2500.carrier_freq(base_freq + (freqstep * (x-left)) / 1000)
-'        time.USleep(_dly)
-        c := (cc2500.rssi()+_offset)
-        vga.plot(x, top, c)
-{
-        y := sy-(c/3)+5                                         ' Plot above waterfall
-        vga.Plot(x, y-1 <# (sy-2), 127)                         '
-        vga.Plot(x, y-2 <# (sy-2), 0)                           '
-        vga.Line(x, sy-1, x, y <# (sy-2), 0)                    '
-}
-    vga.scroll_down(left, top, right, bottom)
+    repeat x from 0 to (waterfall._width-2)
+        cc2500.carrier_freq(_basefreq + ((x*3350) / 1000) )
+'        ser.printf(@"f: %d\n\r", _basefreq + ((x*3350) / 1000) )
+        _rssi[x] := cc2500.rssi()+_offset
+'        ser.printf(@"x=%d  rssi=%d\n\r", x, _rssi[x])
 
 PRI draw_scale(x, y, ht) | idx, color, scl_width, bottom, top, range
 ' Draw the color scale setup at program start
