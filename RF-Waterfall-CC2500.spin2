@@ -5,55 +5,33 @@
         as a "waterfall"
         Utilizes ISM-band transceiver IC's (CC2500 version)
     Author: Jesse Burt
-    Copyright (c) 2020
+    Copyright (c) 2023
     Started: Apr 28, 2020
-    Updated: Apr 28, 2020
+    Updated: Jul 17, 2023
     See end of file for terms of use.
     --------------------------------------------
 }
 CON
 
-    ' 250MHz
-    XTAL            = cfg#XTAL
-    XDIV            = 2
-    XMUL            = 25
-    XDIVP           = cfg#XDIVP
-    XOSC            = cfg#XOSC
-    XSEL            = cfg#XSEL
-    XPPPP           = cfg#XPPPP
-    CLOCKFREQ       = XTAL / XDIV * XMUL / XDIVP
-    SETFREQ         = 1<<24 + (XDIV-1)<<18 + (XMUL-1)<<8 + XPPPP<<4 + XOSC<<2
-    ENAFREQ         = SETFREQ + XSEL
+    _clkfreq    = 250_000_000
+    _xtlfreq    = 20_000_000
 
     WIDTH           = 320
     HEIGHT          = 240
     XMAX            = WIDTH-1
     YMAX            = HEIGHT-1
     BUFFSZ          = WIDTH * HEIGHT
-    BPP             = 1
-    BPL             = WIDTH * BPP
 
     LABEL_COL       = 0
     DATA_COL        = 11
-' User-modifiable constants
-' CC2500
-    CS_PIN          = 43
-    SCK_PIN         = 41
-    MOSI_PIN        = SCK_PIN+1                             ' This pin relationship is mandatory
-    MISO_PIN        = SCK_PIN-1                             '
-    SCK_FREQ        = 6_500_000
 
-    SER_RX          = cfg#SER_RX
-    SER_TX          = cfg#SER_TX
     SER_BAUD        = 2_000_000
-    LED             = cfg#LED1
 
-    VGA_BASEPIN     = 0                                     ' 0, 8, 16, 24, 32, 40, 48
+    VGA_BASEPIN     = 32                                     ' 0, 8, 16, 24, 32, 40, 48
 '                                                           Works with all basepins on the P2ES except 56
 
 VAR
 
-    long _palette[255]
     long _strtemp[4]
     long _basefreq, _span
     long _dly
@@ -61,41 +39,39 @@ VAR
     word _wf_x, _wf_y, _wf_width, _wf_height
     byte _framebuffer[BUFFSZ]
 
-    byte _ser_cog, _vga_cog, _cc2500_cog
     byte _offset
 
 OBJ
 
-    cfg         : "core.con.boardcfg.p2eval"
-    ser         : "com.serial.terminal.ansi"
-    time        : "time"
-    io          : "io"
-    vga         : "display.vga.bitmap-8bpp"
-    int         : "string.integer"
-    fnt         : "font.5x8"
-    cc2500      : "wireless.transceiver.cc2500.spi"
+    cfg:    "boardcfg.p2eval"
+    ser:    "com.serial.terminal.ansi"
+    vga:    "display.vga.bitmap-8bpp"
+    fnt:    "font.5x8"
+    cc2500: "wireless.transceiver.cc2500" | CS=0, SCK=1, MOSI=2, MISO=3, SPI_FREQ=6_500_000
+    str:    "string"
 
 PUB Main | lna, dvga, cmd, rxbw, intfreq
 
-    FullSpecPalette
-'    GreyScalePalette
-    Setup
+    vga.set_timings(10, 33, 16, 89, 85, 640)
+    full_spec_palette()
+'    grey_scale_palette
+    setup
 
     _basefreq := 2_400_000                                      ' 2_400_000..2_483_500 (kHz)
     _span := 1_000_000                                          ' Freq span from base freq
 
     cc2500.Idle                                                 ' Change to Idle while changing settings
-    cc2500.AutoCal(cc2500#IDLE_RXTX)
-    cc2500.CarrierFreq(_basefreq)
-    cc2500.SyncMode(cc2500#SYNCMODE_3032_CS)
-    cc2500.CarrierSense(14)
-    cc2500.DVGAGain(-3)
-    cc2500.LNAGain(-17)
-    cc2500.RXBandwidth(58)
-    cc2500.IntFreq(380859)
-    cc2500.AGCMode(cc2500#AGC_OFF)                              ' AGC_NORMAL, AGC_OFF
-    cc2500.DCBlock(FALSE)
-    cc2500.RXMode
+    cc2500.Auto_Cal_mode(cc2500#IDLE_RXTX)
+    cc2500.Carrier_Freq(_basefreq)
+    cc2500.Syncwd_Mode(cc2500#SYNCMODE_3032_CS)
+    cc2500.Carrier_Sense_thresh(14)
+    cc2500.dvga_gain(-3)
+    cc2500.lna_gain(-17)
+    cc2500.RX_Bw(58)
+    cc2500.Interm_Freq(380859)
+    cc2500.AGC_Mode(cc2500#AGC_OFF)                              ' AGC_NORMAL, AGC_OFF
+    cc2500.DC_Block_ena(FALSE)
+    cc2500.RX_Mode()
 
     lna := dvga := rxbw := 0
     intfreq := 380859
@@ -119,32 +95,32 @@ PUB Main | lna, dvga, cmd, rxbw, intfreq
             case cmd
                 "=":
                     lna := (lna + 1) <# 7
-                    cc2500.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                    cc2500.lna_gain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
                 "-":
                     lna := (lna - 1) #> 0
-                    cc2500.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                    cc2500.lna_gain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
                 "]":
                     dvga := (dvga + 1) <# 7
-                    cc2500.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
+                    cc2500.dvga_gain(lookupz(dvga: -3, -2, -1, 0))
                 "[":
                     dvga := (dvga - 1) #> 0
-                    cc2500.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
+                    cc2500.dvga_gain(lookupz(dvga: -3, -2, -1, 0))
                 ";":
                     _offset := (_offset - 1) #> 138
                 "'":
                     _offset := (_offset + 1) <# 255
                 ".":
                     rxbw := (rxbw + 1) <# 15
-                    cc2500.RXBandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                    cc2500.rx_bw(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
                 ",":
                     rxbw := (rxbw - 1) #> 0
-                    cc2500.RXBandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                    cc2500.rx_bw(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
                 "p":
                     intfreq := (intfreq + 25390) <# 787109
-                    cc2500.IntFreq(intfreq)
+                    cc2500.interm_freq(intfreq)
                 "o":
                     intfreq := (intfreq - 25390) #> 25390
-                    cc2500.IntFreq(intfreq)
+                    cc2500.interm_freq(intfreq)
                 "s":
                     _span := (_span - 10_000) #> 10_000
                 "S":
@@ -162,15 +138,15 @@ PUB Main | lna, dvga, cmd, rxbw, intfreq
                     ser.printf("%d\n", _dly)
 
                 OTHER:
-            cc2500.RXMode
+            cc2500.rx_mode()
             DisplaySettings                                     ' Update the settings display
 
 PUB DisplaySettings | basefreq, span, lna, dvga, rxbw, ifreq, startrow
 
-    lna := cc2500.LNAGain
-    dvga := cc2500.DVGAGain
-    rxbw := cc2500.RXBandwidth
-    ifreq := cc2500.IntFreq
+    lna := cc2500.lna_gain()
+    dvga := cc2500.dvga_gain()
+    rxbw := cc2500.rx_bw()
+    ifreq := cc2500.interm_freq()
 
     vga.FGColor(255)
     vga.position(0, 0)
@@ -222,9 +198,9 @@ PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right,
 ' left = 1
 ' base_freq = 2_400_000
 ' (2_400_000 + (3 * (0-1)))
-    vga.WaitVSync
+    vga.wait_vsync()
     repeat x from left to right
-        cc2500.Carrierfreq(base_freq + (freqstep * (x-left)) / 1000)
+        cc2500.carrier_freq(base_freq + (freqstep * (x-left)) / 1000)
 '        time.USleep(_dly)
         c := (cc2500.RSSI+_offset)
         vga.Plot(x, top, c)
@@ -263,7 +239,7 @@ PRI DecThousands(n, sep_char) | instr[4], inlen, idx, outstr[4], outlen, outidx,
     instr := 0
     outstr := 0
     inlen := idx := outlen := outidx := sepidx := 0
-    instr := int.Dec(n)                                     ' Convert num to string
+    instr := str.dec(n)                                     ' Convert num to string
     inlen := strsize(instr)
     outlen := inlen + ( (inlen-1) / 3 )                     ' Output string length is input length plus enough space for separator characters
 
@@ -286,34 +262,40 @@ PRI DecThousands(n, sep_char) | instr[4], inlen, idx, outstr[4], outlen, outidx,
 
 PUB Setup
 
-    clkset(ENAFREQ, CLOCKFREQ)
-    repeat until _ser_cog := ser.StartRXTX(SER_RX, SER_TX, 0, SER_BAUD)
+    ser.Start(SER_BAUD)
     ser.clear
-    ser.printf("Serial terminal started - p2 @ %dMHz (cog %d)\n", clkfreq/1000000, _ser_cog)
-    if _vga_cog := vga.start(VGA_BASEPIN, @_framebuffer, @_palette, WIDTH, HEIGHT)
-        ser.printf("VGA 8bpp driver started (cog %d)\n", _vga_cog)
-        vga.FontAddress(fnt.BaseAddr)
-        vga.FontSize(6, 8)
-        vga.Clear
+    ser.strln(@"Serial terminal started")
+
+    if vga.start(VGA_BASEPIN, WIDTH, HEIGHT, @_framebuffer)
+        vga.font_addr(fnt.ptr())
+        vga.font_scl(1)
+        vga.font_spacing(1, 0)
+        vga.font_sz(fnt.WIDTH, fnt.HEIGHT)
+        vga.clear()
+        ser.strln(@"VGA 8bpp driver started")
+        vga.char_attrs(vga.DRAWBG)
     else
-        ser.printf("VGA 8bpp driver failed to start\n")
+        ser.strln(@"VGA 8bpp driver failed to start")
         repeat
 
-    if _cc2500_cog := cc2500.Start (CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_FREQ)
-        ser.PrintF("CC2500 driver started (cog %d)\n", _cc2500_cog)
+    if cc2500.Start()
+        ser.strln(@"CC2500 driver started")
     else
-        ser.PrintF("CC2500 driver failed to start - halting\n")
-        FlashLED (LED, 500)
+        ser.strln(@"CC2500 driver failed to start - halting")
+        repeat
 
-PUB GreyScalePalette | i
+PUB grey_scale_palette() | i, ptr_pal
 
     repeat i from 0 to 255
-        _palette[i] := 0 | (i << 16) | (i << 8) | i
+        long[ptr_pal][i] := 0 | (i << 16) | (i << 8) | i
 
-PUB FullSpecPalette | i, r, g, b, c
+PUB full_spec_palette() | i, r, g, b, c, ptr_pal
 ' Set up palette
     r := g := b := c := 0
+    ptr_pal := vga.palette_ptr()
     repeat i from 0 to 255
+        c := 0 | (r << 16) | (g << 8) | b
+        long[ptr_pal][i] := c
         case i
             0..31:
                 r += 4
@@ -339,37 +321,30 @@ PUB FullSpecPalette | i, r, g, b, c
                 r := r
                 g -= 4
                 b := 0
-            192..254:
+            192..253:
                 r := r
                 g += 4
                 b += 4
-            255:
+            254..255:
                 r := g := b := 255
 
-        c := 0 | (r << 16) | (g << 8) | b
-        _palette[i] := c
-    _palette[0] := $00_00_00_00
-
-#include "lib.utility.spin2"
-
+DAT
 {
-    --------------------------------------------------------------------------------------------------------
-    TERMS OF USE: MIT License
+Copyright 2023 Jesse Burt
 
-    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-    associated documentation files (the "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
-    following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-    The above copyright notice and this permission notice shall be included in all copies or substantial
-    portions of the Software.
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-    --------------------------------------------------------------------------------------------------------
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 }
 
