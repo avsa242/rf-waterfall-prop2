@@ -13,55 +13,47 @@
 }
 CON
 
-    ' 250MHz
-    XTAL            = cfg#XTAL
-    XDIV            = 2
-    XMUL            = 25
-    XDIVP           = cfg#XDIVP
-    XOSC            = cfg#XOSC
-    XSEL            = cfg#XSEL
-    XPPPP           = cfg#XPPPP
-    CLOCKFREQ       = XTAL / XDIV * XMUL / XDIVP
-    SETFREQ         = 1<<24 + (XDIV-1)<<18 + (XMUL-1)<<8 + XPPPP<<4 + XOSC<<2
-    ENAFREQ         = SETFREQ + XSEL
+    _clkfreq        = 250_000_000
+    _xtlfreq        = cfg._xtlfreq
+
+' -- User-modifiable constants
+    SER_BAUD        = 2_000_000
+    LED             = cfg.LED1
+
+' CC1101
+    BASEPIN         = 0
+    CS_PIN          = BASEPIN+3'8
+    SCK_PIN         = BASEPIN+2'9
+    MOSI_PIN        = BASEPIN+0'10                             ' This pin relationship is mandatory
+    MISO_PIN        = BASEPIN+1'11                             '
+    SCK_FREQ        = 10_000_000
+
+    VGA_BASEPIN     = 32                                     ' 0, 8, 16, 24, 32, 40, 48
+'                                                           Works with all basepins on the P2ES except 56
+' --
 
     WIDTH           = 320
     HEIGHT          = 240
     XMAX            = WIDTH-1
     YMAX            = HEIGHT-1
     BUFFSZ          = WIDTH * HEIGHT
-    BPP             = 1
-    BPL             = WIDTH * BPP
+    BPP             = vga.BYTESPERPX
+    BPL             = (WIDTH * HEIGHT) * BPP
 
     LABEL_COL       = 0
     DATA_COL        = 11
 ' User-modifiable constants
-' CC1101
-    CS_PIN          = 16
-    SCK_PIN         = 18
-    MOSI_PIN        = SCK_PIN+1                             ' This pin relationship is mandatory
-    MISO_PIN        = SCK_PIN-1                             '
-    SCK_FREQ        = 6_500_000
-
-    SER_RX          = cfg#SER_RX
-    SER_TX          = cfg#SER_TX
-    SER_BAUD        = 2_000_000
-    LED             = cfg#LED1
-
-    VGA_BASEPIN     = 0                                     ' 0, 8, 16, 24, 32, 40, 48
-'                                                           Works with all basepins on the P2ES except 56
 
 VAR
 
-    long _palette[255]
+    long _palette[256]
     long _strtemp[4]
-    long _basefreq, _span
+    long _center, _basefreq, _span, _start, _end
     long _dly
 
     word _wf_x, _wf_y, _wf_width, _wf_height
     byte _framebuffer[BUFFSZ]
 
-    byte _ser_cog, _vga_cog, _cc1101_cog
     byte _offset
 
 OBJ
@@ -71,31 +63,34 @@ OBJ
     time        : "time"
     io          : "io"
     vga         : "display.vga.bitmap-8bpp"
+'    vga         : "vga1"
     int         : "string.integer"
     fnt         : "font.5x8"
     cc1101      : "wireless.transceiver.cc1101.spi"
 
-PUB Main | lna, dvga, cmd, rxbw, intfreq
+PUB Main() | lna, dvga, cmd, rxbw, intfreq
 
-    FullSpecPalette
-'    GreyScalePalette
-    Setup
+    fullspecpalette()
+'    greyscalepalette()
+    setup()
+    _center := 433_800_000                                    ' 300_000_000..348_000_000, 387_000_000..464_000_000, 779_000_000..928_000_000
+    _span := 250_000                                          ' Freq span from base freq
+    _start := _center - (_span/2)
+    _end := _center + (_span/2)
 
-    _basefreq := 433_500_000                                    ' 300_000_000..348_000_000, 387_000_000..464_000_000, 779_000_000..928_000_000
-    _span := 1_000_000                                          ' Freq span from base freq
-
-    cc1101.Idle                                                 ' Change to Idle while changing settings
-    cc1101.AutoCal(cc1101#IDLE_RXTX)
-    cc1101.CarrierFreq(_basefreq)
-    cc1101.SyncMode(cc1101#SYNCMODE_3032_CS)
-    cc1101.CarrierSense(14)
-    cc1101.DVGAGain(-3)
-    cc1101.LNAGain(-17)
-    cc1101.RXBandwidth(58)
-    cc1101.IntFreq(380859)
-    cc1101.AGCMode(cc1101#AGC_NORMAL)
-    cc1101.DCBlock(FALSE)
-    cc1101.RXMode
+    cc1101.gpio0(cc1101.IO_HI_Z)
+    cc1101.idle()                                               ' Change to Idle while changing settings
+    cc1101.autocal(cc1101.IDLE_RXTX)
+    cc1101.carrierfreq(_basefreq)
+    cc1101.syncmode(cc1101.SYNCMODE_3032_CS)
+    cc1101.carriersense(14)
+    cc1101.magntarget(24)
+    cc1101.dvgagain(-3)
+    cc1101.lnagain(0)
+    cc1101.rxbandwidth(58)
+    cc1101.agcmode(cc1101.AGC_OFF)
+    cc1101.dcblock(FALSE)
+    cc1101.rxmode()
 
     lna := dvga := rxbw := 0
     intfreq := 380859
@@ -103,48 +98,46 @@ PUB Main | lna, dvga, cmd, rxbw, intfreq
 
 ' Waterfall position, width, height
     _wf_x := 0
-    _wf_y := vga.FontHeight * 6
+    _wf_y := vga.fontheight() * 6
     _wf_width := _wf_x+300
-    _wf_height := _wf_y+(vga.FontHeight * 12)-4
+    _wf_height := _wf_y+(vga.fontheight() * 12)-4
 
-    vga.Box(_wf_x, _wf_y, _wf_width, _wf_height, 255, FALSE)                       ' Draw frame around waterfall
-    DisplaySettings
+    vga.box(_wf_x, _wf_y, _wf_width, _wf_height, 255, FALSE)                       ' Draw frame around waterfall
+    displaysettings()
 
-    DrawScale(_wf_width+5, _wf_y, _wf_height-_wf_y)                                      ' Draw the color scale (for RSSI)
-
+    drawscale(_wf_width+5, _wf_y, _wf_height-_wf_y)                                      ' Draw the color scale (for RSSI)
     repeat
-        Waterfall(_wf_x, _wf_y, _wf_width, _wf_height, _basefreq, _span)
-        if lookdown(cmd := ser.rxcheck: 32..127)
-            cc1101.Idle
+        waterfall(_wf_x, _wf_y, _wf_width, _wf_height, _basefreq, _span)
+        if lookdown(cmd := ser.rxcheck(): 32..127)
             case cmd
                 "=":
                     lna := (lna + 1) <# 7
-                    cc1101.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                    cc1101.lnagain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
                 "-":
                     lna := (lna - 1) #> 0
-                    cc1101.LNAGain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                    cc1101.lnagain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
                 "]":
                     dvga := (dvga + 1) <# 7
-                    cc1101.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
+                    cc1101.dvgagain(lookupz(dvga: -3, -2, -1, 0))
                 "[":
                     dvga := (dvga - 1) #> 0
-                    cc1101.DVGAGain(lookupz(dvga: -3, -2, -1, 0))
+                    cc1101.dvgagain(lookupz(dvga: -3, -2, -1, 0))
                 ";":
                     _offset := (_offset - 1) #> 138
                 "'":
                     _offset := (_offset + 1) <# 255
                 ".":
                     rxbw := (rxbw + 1) <# 15
-                    cc1101.RXBandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                    cc1101.rxbandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
                 ",":
                     rxbw := (rxbw - 1) #> 0
-                    cc1101.RXBandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                    cc1101.rxbandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
                 "p":
                     intfreq := (intfreq + 25390) <# 787109
-                    cc1101.IntFreq(intfreq)
+                    cc1101.intfreq(intfreq)
                 "o":
                     intfreq := (intfreq - 25390) #> 25390
-                    cc1101.IntFreq(intfreq)
+                    cc1101.intfreq(intfreq)
                 "s":
                     _span := (_span - 10_000) #> 10_000
                 "S":
@@ -161,26 +154,26 @@ PUB Main | lna, dvga, cmd, rxbw, intfreq
                     _dly := (_dly+1) <# 1000
                     ser.printf("%d\n", _dly)
 
-                OTHER:
-            cc1101.RXMode
-            DisplaySettings                                     ' Update the settings display
+                other:
+            cc1101.rxmode()
+            displaysettings()                                   ' Update the settings display
 
-PUB DisplaySettings | basefreq, span, lna, dvga, rxbw, ifreq, startrow
+PUB DisplaySettings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
 
-    lna := cc1101.LNAGain
-    dvga := cc1101.DVGAGain
-    rxbw := cc1101.RXBandwidth
-    ifreq := cc1101.IntFreq
+    lna := cc1101.lnagain()
+    dvga := cc1101.dvgagain()
+    rxbw := cc1101.rxbandwidth()
+    ifreq := cc1101.intfreq()
 
-    vga.FGColor(255)
-    vga.position(0, 0)
+    vga.fgcolor(255)
+    vga.position(0, 2)
 
-    DecThousands(_basefreq, ",") ' XXX should be able to use the return value from this, but it doesn't work with the vga object
+    decthousands(_basefreq, ",") ' XXX should be able to use the return value from this, but it doesn't work with the vga object
     vga.printf("%sHz", @_strtemp)
-    DecThousands(_span, ",")
+    decthousands(_span, ",")
     vga.printf("   Span: %sHz   ", @_strtemp)
 
-    startrow := ((_wf_y + _wf_height+4) / vga.FontHeight)
+    startrow := ((_wf_y + _wf_height+4) / vga.fontheight())
 
     vga.position(LABEL_COL, startrow)
     vga.printf("LNA Gain: ")
@@ -215,19 +208,19 @@ PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right,
     right := ex - 1
     freqstep := (span/(ex-sx))                                  ' *CC1101 Freq resolution is actually 397Hz
 
-    vga.WaitVSync
     repeat x from left to right
-        cc1101.Carrierfreq(base_freq + (freqstep * (x-left)))
-'        time.USleep(_dly)
-        c := (cc1101.RSSI+_offset)
-        vga.Plot(x, top, c)
-
+        cc1101.carrierfreq(base_freq + (freqstep * (x-left)))
+        c := (cc1101.rssi()+_offset)
+        vga.plot(x, top, c)
+{
         y := sy-(c/3)+5                                         ' Plot above waterfall
-        vga.Plot(x, y-1 <# (sy-2), 127)                         '
-        vga.Plot(x, y-2 <# (sy-2), 0)                           '
-        vga.Line(x, sy-1, x, y <# (sy-2), 0)                    '
-
-    vga.ScrollDown(left, top, right, bottom)
+        vga.plot(x, y-1 <# (sy-2), 127)                         '
+        vga.plot(x, y-2 <# (sy-2), 0)                           '
+        vga.line(x, sy-1, x, y <# (sy-2), 0)                    '
+}
+'    vga.waitvsync()
+'    repeat 2
+    vga.scrolldown(left, top, right, bottom)
 
 PRI DrawScale(x, y, ht) | idx, color, scl_width, bottom, top, range
 ' Draw the color scale setup at program start
@@ -236,27 +229,27 @@ PRI DrawScale(x, y, ht) | idx, color, scl_width, bottom, top, range
     scl_width := 5
 
     repeat idx from bottom to top
-        color := (range-idx) * 2                                ' Skip every other color in the scale
+        color := (range-idx)                                ' Skip every other color in the scale
         vga.Line(x, idx, x+scl_width, idx, color)               '   so most of it can be fit on screen
 
-PRI DecThousands(n, sep_char) | instr[4], inlen, idx, outstr[4], outlen, outidx, sepidx
+PRI DecThousands(n, sep_char): ptr_str | instr[4], inlen, idx, outstr[4], outlen, outidx, sepidx
 ' Display a decimal number (unsigned int) with thousands separators
 '   n:          0..2147483647
 '   sep_char:   32..127 (ASCII character)
     case n                                                  ' Validate number
         0..POSX:
-        OTHER:
+        other:
             return string("ERR")                            ' Return "ERR" if out of range
 
     case sep_char                                           ' Validate separator character
         32..127:
-        OTHER:
+        other:
             return string("ERR")
 
     instr := 0
     outstr := 0
     inlen := idx := outlen := outidx := sepidx := 0
-    instr := int.Dec(n)                                     ' Convert num to string
+    instr := int.dec(n)                                     ' Convert num to string
     inlen := strsize(instr)
     outlen := inlen + ( (inlen-1) / 3 )                     ' Output string length is input length plus enough space for separator characters
 
@@ -277,33 +270,38 @@ PRI DecThousands(n, sep_char) | instr[4], inlen, idx, outstr[4], outlen, outidx,
     longmove(@_strtemp, @outstr, 4)
     return @outstr
 
-PUB Setup
+PUB Setup()
 
-    clkset(ENAFREQ, CLOCKFREQ)
-    repeat until _ser_cog := ser.StartRXTX(SER_RX, SER_TX, 0, SER_BAUD)
-    ser.clear
-    ser.printf("Serial terminal started - p2 @ %dMHz (cog %d)\n", clkfreq/1000000, _ser_cog)
-    if _vga_cog := vga.start(VGA_BASEPIN, @_framebuffer, @_palette, WIDTH, HEIGHT)
-        ser.printf("VGA 8bpp driver started (cog %d)\n", _vga_cog)
-        vga.FontAddress(fnt.BaseAddr)
-        vga.FontSize(6, 8)
-        vga.Clear
+    ser.start(SER_BAUD)
+    ser.clear()
+    ser.printf("Serial terminal started - p2 @ %dMHz\n", clkfreq/1000000)
+
+'    vga.settimings(10, 33, 16, 96, 48, 640) ' capture
+    vga.settimings(10, 33, 16, 89, 85, 640)
+    if vga.start(VGA_BASEPIN, @_framebuffer, @_palette, WIDTH, HEIGHT)
+'        ser.strln(string("VGA 8bpp driver started"))
+        vga.fontspacing(1, 1)
+        vga.fontscale(1)
+        vga.fontsize(fnt.WIDTH, fnt.HEIGHT)
+        vga.fontaddress(fnt.baseaddr())
+        vga.clear()
+        ser.strln(string("VGA 8bpp driver started"))
     else
-        ser.printf("VGA 8bpp driver failed to start\n")
+        ser.strln(string("VGA 8bpp driver failed to start"))
         repeat
 
-    if _cc1101_cog := cc1101.Start (CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_FREQ)
-        ser.PrintF("CC1101 driver started (cog %d)\n", _cc1101_cog)
+    if cc1101.startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_FREQ)
+        ser.strln(string("CC1101 driver started"))
     else
-        ser.PrintF("CC1101 driver failed to start - halting\n")
-        FlashLED (LED, 500)
+        ser.strln(string("CC1101 driver failed to start - halting"))
+        repeat
 
-PUB GreyScalePalette | i
+PUB GreyScalePalette() | i
 
     repeat i from 0 to 255
         _palette[i] := 0 | (i << 16) | (i << 8) | i
 
-PUB FullSpecPalette | i, r, g, b, c
+PUB FullSpecPalette() | i, r, g, b, c
 ' Set up palette
     r := g := b := c := 0
     repeat i from 0 to 255
@@ -342,8 +340,6 @@ PUB FullSpecPalette | i, r, g, b, c
         c := 0 | (r << 16) | (g << 8) | b
         _palette[i] := c
     _palette[0] := $00_00_00_00
-
-#include "lib.utility.spin2"
 
 {
     --------------------------------------------------------------------------------------------------------

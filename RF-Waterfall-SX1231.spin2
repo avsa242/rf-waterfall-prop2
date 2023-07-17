@@ -14,16 +14,21 @@
 CON
 
     ' 250MHz
-    XTAL            = cfg#XTAL
-    XDIV            = 2
-    XMUL            = 25
-    XDIVP           = cfg#XDIVP
-    XOSC            = cfg#XOSC
-    XSEL            = cfg#XSEL
-    XPPPP           = cfg#XPPPP
-    CLOCKFREQ       = XTAL / XDIV * XMUL / XDIVP
-    SETFREQ         = 1<<24 + (XDIV-1)<<18 + (XMUL-1)<<8 + XPPPP<<4 + XOSC<<2
-    ENAFREQ         = SETFREQ + XSEL
+    _clkfreq        = 250_000_000
+    _xtlfreq       = cfg#_xtlfreq
+
+' -- User-modifiable constants
+    SER_BAUD        = 2_000_000
+    LED             = cfg#LED1
+
+    CS_PIN          = 0
+    SCK_PIN         = 1
+    MOSI_PIN        = 2
+    MISO_PIN        = 3
+    SCK_FREQ        = 10_000_000
+
+    VGA_BASEPIN     = 32                         ' 0, 8, 16, 24, 32, 40, 48
+' --
 
     WIDTH           = 320
     HEIGHT          = 240
@@ -35,21 +40,6 @@ CON
 
     LABEL_COL       = 0
     DATA_COL        = 11
-' User-modifiable constants
-' SX1231
-    MISO_PIN        = 33
-    MOSI_PIN        = 35
-    SCK_PIN         = 34
-    CS_PIN          = 32
-    SCK_FREQ        = 10_000_000
-
-    SER_RX          = cfg#SER_RX
-    SER_TX          = cfg#SER_TX
-    SER_BAUD        = 2_000_000
-    LED             = cfg#LED1
-
-    VGA_BASEPIN     = 0                                     ' 0, 8, 16, 24, 32, 40, 48
-'                                                           Works with all basepins on the P2ES except 56
 
 VAR
 
@@ -61,71 +51,70 @@ VAR
     word _wf_x, _wf_y, _wf_width, _wf_height
     byte _framebuffer[BUFFSZ]
 
-    byte _ser_cog, _vga_cog, _sx1231_cog
     byte _offset
 
 OBJ
 
     cfg         : "core.con.boardcfg.p2eval"
     ser         : "com.serial.terminal.ansi"
-    time        : "time"
-    io          : "io"
     vga         : "display.vga.bitmap-8bpp"
     int         : "string.integer"
     fnt         : "font.5x8"
-    sx1231       : "wireless.transceiver.sx1231.spi"
+    sx1231      : "wireless.transceiver.sx1231.spi"
 
-PUB Main | lna, cmd, rxbw
+PUB Main() | lna, cmd, rxbw
 
-    FullSpecPalette
-'    GreyScalePalette
-    Setup
+    fullspecpalette()
+'    greyscalepalette()
+    setup()
 
-    _basefreq := 432_200_000                                ' 290_000_000..340_000_000, 424_000_000..510_000_000, 862_000_000..1_020_000_000
-    _span := 500_000                                        ' Freq span from base freq
+    _basefreq := 902_300_000                    ' 290_000_000..340_000_000, 424_000_000..510_000_000, 862_000_000..1_020_000_000
+    _span := 500_000                            ' Freq span from base freq
 
-    sx1231.Idle                                             ' Change to Idle while changing settings
-    sx1231.RCOscCal(TRUE)
-    sx1231.CarrierFreq(_basefreq)
-    sx1231.LNAZInput(50)
-    sx1231.LNAGain(-48)
-    sx1231.RXBandwidth(10_400)
-    sx1231.RXMode
+    sx1231.idle()
+    sx1231.rcosccal(TRUE)
+    sx1231.carrierfreq(_basefreq)
+    sx1231.lnazinput(50)
+    sx1231.lnagain(-48)
+    sx1231.rxbandwidth(2_600)
+    sx1231.rxmode()
 
     lna := rxbw := 0
     _offset := 115 #> 115
 
 ' Waterfall position, width, height
     _wf_x := 0
-    _wf_y := vga.FontHeight * 6
+    _wf_y := vga.fontheight() * 6
     _wf_width := _wf_x+300
-    _wf_height := _wf_y+(vga.FontHeight * 12)-4
+    _wf_height := _wf_y+(vga.fontheight() * 12)-4
 
-    vga.Box(_wf_x, _wf_y, _wf_width, _wf_height, 255, FALSE)' Draw frame around waterfall
-    DisplaySettings
+    vga.box(_wf_x, _wf_y, _wf_width, _wf_height, 255, FALSE)' Draw frame around waterfall
+    displaysettings()
 
-    DrawScale(_wf_width+5, _wf_y, _wf_height-_wf_y)         ' Draw the color scale (for RSSI)
+    drawscale(_wf_width+5, _wf_y, _wf_height-_wf_y)         ' Draw the color scale (for RSSI)
 
     repeat
         Waterfall(_wf_x, _wf_y, _wf_width, _wf_height, _basefreq, _span)
-        if lookdown(cmd := ser.rxcheck: 32..127)
+        if lookdown(cmd := ser.rxcheck(): 32..127)
             case cmd
                 "=":
                     lna := (lna + 1) <# 7
-                    sx1231.LNAGain(lookupz(lna: -48, -36, -24, -12, -6))
+                    sx1231.lnagain(lookupz(lna: -48, -36, -24, -12, -6))
                 "-":
                     lna := (lna - 1) #> 0
-                    sx1231.LNAGain(lookupz(lna: -48, -36, -24, -12, -6))
+                    sx1231.lnagain(lookupz(lna: -48, -36, -24, -12, -6))
                 ";":
                     _offset := (_offset - 1) #> 115
                 "'":
                     _offset := (_offset + 1) <# 255
                 ".":
                     rxbw := (rxbw + 1) <# 23
-                    sx1231.RXBandwidth(lookupz(rxbw: 2600, 3100, 3900, 5200, 6300, 7800, 10400, 12500, 15600, 20800, 25000, 31300, 41700, 50000, 62500, 83300, 100000, 125000, 166700, 200000, 250000, 333300, 400000, 500000))
+                    sx1231.rxbandwidth(lookupz(rxbw: 500000, 400000, 333300, 250000, 200000, 166700, 125000, 100000, 83300, 62500, 50000, 41700, 31300, 25000, 20800, 15600, 12500, 10400, 7800, 6300, 5200, 3900, 3100, 2600))
+                    ser.printf("rxbw: %d    rxbandwidth: %d\n", rxbw, sx1231.rxbandwidth())
                 ",":
                     rxbw := (rxbw - 1) #> 0
-                    sx1231.RXBandwidth(lookupz(rxbw: 2600, 3100, 3900, 5200, 6300, 7800, 10400, 12500, 15600, 20800, 25000, 31300, 41700, 50000, 62500, 83300, 100000, 125000, 166700, 200000, 250000, 333300, 400000, 500000))
+                    sx1231.rxbandwidth(lookupz(rxbw: 500000, 400000, 333300, 250000, 200000, 166700, 125000, 100000, 83300, 62500, 50000, 41700, 31300, 25000, 20800, 15600, 12500, 10400, 7800, 6300, 5200, 3900, 3100, 2600))
+                    ser.printf("rxbw: %d    rxbandwidth: %d\n", rxbw, sx1231.rxbandwidth())
                 "s":
                     _span -= 1000
                 "S":
@@ -143,24 +132,24 @@ PUB Main | lna, cmd, rxbw
                     ser.printf("%d\n", _dly)
 
                 OTHER:
-            DisplaySettings                                 ' Update the settings display
+            DisplaySettings()                   ' Update the settings display
 
-PUB DisplaySettings | basefreq, span, lna, dvga, rxbw, ifreq, startrow
+PUB DisplaySettings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
 
-    lna := sx1231.LNAGain
-    dvga := sx1231.DVGAGain
-    rxbw := sx1231.RXBandwidth
-    ifreq := sx1231.IntFreq
+    lna := sx1231.lnagain()
+    dvga := sx1231.dvgagain()
+    rxbw := sx1231.rxbandwidth()
+    ifreq := sx1231.intfreq()
 
-    vga.FGColor(255)
+    vga.fgcolor(255)
     vga.position(0, 0)
 
-    DecThousands(_basefreq, ",") ' XXX should be able to use the return value from this, but it doesn't work with the vga object
+    decthousands(_basefreq, ",") ' XXX should be able to use the return value from this, but it doesn't work with the vga object
     vga.printf("%sHz", @_strtemp)
-    DecThousands(_span, ",")
+    decthousands(_span, ",")
     vga.printf("   Span: %sHz   ", @_strtemp)
 
-    startrow := ((_wf_y + _wf_height+4) / vga.FontHeight)
+    startrow := ((_wf_y + _wf_height+4) / vga.fontheight())
 
     vga.position(LABEL_COL, startrow)
     vga.printf("LNA Gain: ")
@@ -178,21 +167,21 @@ PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right,
     top := sy + 1
     bottom := ey - 1
     right := ex - 1
-    freqstep := (span/(ex-sx))                                  ' *CC1101 Freq resolution is actually 397Hz
+    freqstep := (span/(ex-sx))
    
-    vga.WaitVSync
+    vga.waitvsync()
     repeat x from left to right
-        sx1231.Carrierfreq(base_freq + (freqstep * (x-left)))
-'        time.USleep(_dly)
-        c := (sx1231.RSSI+_offset)
-        vga.Plot(x, top, c)
+        sx1231.carrierfreq(base_freq + (freqstep * (x-left)))
+'        waitus(_dly)
+        c := (sx1231.rssi()+_offset)
+        vga.plot(x, top, c)
 
-        y := sy-(c/3)+5                                         ' Plot above waterfall
-        vga.Plot(x, y-1 <# (sy-2), 127)                         '
-        vga.Plot(x, y-2 <# (sy-2), 0)                           '
-        vga.Line(x, sy-1, x, y <# (sy-2), 0)                    '
+        y := sy-(c/3)+5                                         ' plot above waterfall
+        vga.plot(x, y-1 <# (sy-2), 127)                         '
+        vga.plot(x, y-2 <# (sy-2), 0)                           '
+        vga.line(x, sy-1, x, y <# (sy-2), 0)                    '
 
-    vga.ScrollDown(left, top, right, bottom)
+    vga.scrolldown(left, top, right, bottom)
 
 PRI DrawScale(x, y, ht) | idx, color, scl_width, bottom, top, range
 ' Draw the color scale setup at program start
@@ -202,9 +191,9 @@ PRI DrawScale(x, y, ht) | idx, color, scl_width, bottom, top, range
 
     repeat idx from bottom to top
         color := (range-idx) * 2                            ' Skip every other color in the scale
-        vga.Line(x, idx, x+scl_width, idx, color)           '   so most of it can be fit on screen
+        vga.line(x, idx, x+scl_width, idx, color)           '   so most of it can be fit on screen
 
-PRI DecThousands(n, sep_char) | instr[4], inlen, idx, outstr[4], outlen, outidx, sepidx
+PRI DecThousands(n, sep_char): retstr | instr[4], inlen, idx, outstr[4], outlen, outidx, sepidx
 ' Display a decimal number (unsigned int) with thousands separators
 '   n:          0..2147483647
 '   sep_char:   32..127 (ASCII character)
@@ -221,7 +210,7 @@ PRI DecThousands(n, sep_char) | instr[4], inlen, idx, outstr[4], outlen, outidx,
     instr := 0
     outstr := 0
     inlen := idx := outlen := outidx := sepidx := 0
-    instr := int.Dec(n)                                     ' Convert num to string
+    instr := int.dec(n)                                     ' Convert num to string
     inlen := strsize(instr)
     outlen := inlen + ( (inlen-1) / 3 )                     ' Output string length is input length plus enough space for separator characters
 
@@ -242,33 +231,32 @@ PRI DecThousands(n, sep_char) | instr[4], inlen, idx, outstr[4], outlen, outidx,
     longmove(@_strtemp, @outstr, 4)
     return @outstr
 
-PUB Setup
+PUB Setup()
 
-    clkset(ENAFREQ, CLOCKFREQ)
-    repeat until _ser_cog := ser.StartRXTX(SER_RX, SER_TX, 0, SER_BAUD)
-    ser.clear
-    ser.printf("Serial terminal started - p2 @ %dMHz (cog %d)\n", clkfreq/1000000, _ser_cog)
-    if _vga_cog := vga.start(VGA_BASEPIN, @_framebuffer, @_palette, WIDTH, HEIGHT)
-        ser.printf("VGA 8bpp driver started (cog %d)\n", _vga_cog)
-        vga.FontAddress(fnt.BaseAddr)
-        vga.FontSize(6, 8)
-        vga.Clear
+    ser.start(SER_BAUD)
+    ser.clear()
+    ser.printf("Serial terminal started - p2 @ %dMHz\n", clkfreq/1000000)
+
+    vga.settimings(10, 33, 16, 89, 85, 640)
+    vga.start(VGA_BASEPIN, @_framebuffer, @_palette, WIDTH, HEIGHT)
+        ser.printf("VGA 8bpp driver started\n")
+        vga.fontscale(1)
+        vga.fontaddress(fnt.BaseAddr())
+        vga.fontsize(6, 8)
+        vga.clear()
+
+    if sx1231.start(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_FREQ)
+        ser.strln(string("SX1231 driver started"))
     else
-        ser.printf("VGA 8bpp driver failed to start\n")
+        ser.strln(string("SX1231 driver failed to start - halting"))
         repeat
 
-    if _sx1231_cog := sx1231.Start (CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_FREQ)
-        ser.PrintF("SX1231 driver started (cog %d)\n", _sx1231_cog)
-    else
-        ser.PrintF("SX1231 driver failed to start - halting\n")
-        FlashLED (LED, 500)
-
-PUB GreyScalePalette | i
+PUB GreyScalePalette() | i
 
     repeat i from 0 to 255
         _palette[i] := 0 | (i << 16) | (i << 8) | i
 
-PUB FullSpecPalette | i, r, g, b, c
+PUB FullSpecPalette() | i, r, g, b, c
 ' Set up palette
     r := g := b := c := 0
     repeat i from 0 to 255
@@ -307,8 +295,6 @@ PUB FullSpecPalette | i, r, g, b, c
         c := 0 | (r << 16) | (g << 8) | b
         _palette[i] := c
     _palette[0] := $00_00_00_00
-
-#include "lib.utility.spin2"
 
 {
     --------------------------------------------------------------------------------------------------------
