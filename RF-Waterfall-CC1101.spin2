@@ -23,7 +23,6 @@ CON
 
 VAR
 
-    long _strtemp[4]
     long _center, _basefreq, _span, _start, _end
     long _dly
 
@@ -37,7 +36,7 @@ OBJ
     ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
     vga:    "display.vga.bitmap-8bpp" | BASEPIN=0, VF=10, VB=33, HF=16, HS=89, HB=85, HV=640
     cc1101: "wireless.transceiver.cc1101" | CS=32+3, SCK=32+2, MOSI=32+0, MISO=32+1, SPI_FREQ=5_000_000
-    int:    "string"
+    str:    "string"
     fnt:    "font.5x8"
 
 
@@ -120,11 +119,9 @@ PUB main() | lna, dvga, cmd, rxbw, intfreq
                 "d":
                     _dly := (_dly-1) #> 0
                     ser.printf("%d\n", _dly)
-
                 "D":
                     _dly := (_dly+1) <# 1000
                     ser.printf("%d\n", _dly)
-
                 other:
             cc1101.rx_mode()
             displaysettings()                                   ' Update the settings display
@@ -140,11 +137,8 @@ PUB displaysettings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
 
     vga.fgcolor(255)
     vga.pos_xy(0, 2)
-
-    decthousands(_basefreq, ",")
-    vga.printf("%sHz", @_strtemp)
-    decthousands(_span, ",")
-    vga.printf("   Span: %sHz   ", @_strtemp)
+    vga.printf("%sHz", dec_thousands(_basefreq, ",") )
+    vga.printf("   Span: %sHz   ", dec_thousands(_span, ",") )
 
     startrow := ((_wf_y + _wf_height+4) / vga.fontheight())
 
@@ -170,7 +164,7 @@ PUB displaysettings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
         vga.fgcolor(190)
     else
         vga.fgcolor(255)
-    vga.printf("%dHz ", ifreq)
+    vga.printf("%sHz ", dec_thousands(ifreq, ",") )
     vga.fgcolor(255)
 
 
@@ -208,43 +202,22 @@ PRI drawscale(x, y, ht) | idx, color, scl_width, bottom, top, range
         vga.Line(x, idx, x+scl_width, idx, color)               '   so most of it can be fit on screen
 
 
-PRI decthousands(n, sep_char): ptr_str | instr[4], inlen, idx, outstr[4], outlen, outidx, sepidx
-' Display a decimal number (unsigned int) with thousands separators
-'   n:          0..2147483647
-'   sep_char:   32..127 (ASCII character)
-    case n                                                  ' Validate number
-        0..POSX:
-        other:
-            return @"ERR"                            ' Return "ERR" if out of range
+var byte _tmp[15]
+pri dec_thousands(n, c): p
+' Convert an integer to a string representation with thousands separators
+'   n:  integer
+'   c:  character to use for separator (e.g., "," or ".")
+    bytefill(@_tmp, 0, 15)
 
-    case sep_char                                           ' Validate separator character
-        32..127:
-        other:
-            return @"ERR"
+    if ( n >= 1_000_000 )
+        str.sprintf5(@_tmp, @"%d%c%03.3d%c%03.3d",  (n/1_000_000), c, ...
+                                                    (n//1_000_000)/1000, c, ...
+                                                    (n//1_000) )
+    elseif ( n >= 1_000 )
+        str.sprintf3(@_tmp, @"%d%c%03.3d",  (n/1_000), c, ...
+                                            (n//1_000) )
 
-    instr := 0
-    outstr := 0
-    inlen := idx := outlen := outidx := sepidx := 0
-    instr := int.dec(n)                                     ' Convert num to string
-    inlen := strsize(instr)
-    outlen := inlen + ( (inlen-1) / 3 )                     ' Output string length is input length plus enough space for separator characters
-
-    idx := inlen-1                                          ' Start at the end of the string
-    outidx := outlen-1                                      '   (= least significant digit)
-
-    repeat while outidx => 0
-        case sepidx                                         ' Use separator index to determine what gets copied to the output next
-            0..2:                                           ' Index 0, 1, or 2 is a digit
-                outstr.byte[outidx] := byte[instr][idx]
-                idx--
-                sepidx++
-            3:                                              ' 3 means we're at the next thousands place - output a separator character
-                outstr.byte[outidx] := sep_char
-                sepidx := 0
-        outidx--                                            ' Traverse one character
-    outstr.byte[outlen] := 0                                ' When finished, terminate the array with a NUL(0) character, to make it a string
-    longmove(@_strtemp, @outstr, 4)
-    return @outstr
+    return @_tmp
 
 
 PUB setup()
