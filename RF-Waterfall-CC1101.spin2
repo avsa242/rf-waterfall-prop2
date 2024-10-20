@@ -14,83 +14,54 @@
 CON
 
     _clkfreq        = 250_000_000
-    _xtlfreq        = cfg._xtlfreq
+    _xtlfreq        = 20_000_000
 
-' -- User-modifiable constants
-    SER_BAUD        = 2_000_000
-    LED             = cfg.LED1
-
-' CC1101
-    BASEPIN         = 0
-    CS_PIN          = BASEPIN+3'8
-    SCK_PIN         = BASEPIN+2'9
-    MOSI_PIN        = BASEPIN+0'10                             ' This pin relationship is mandatory
-    MISO_PIN        = BASEPIN+1'11                             '
-    SCK_FREQ        = 10_000_000
-
-    VGA_BASEPIN     = 32                                     ' 0, 8, 16, 24, 32, 40, 48
-'                                                           Works with all basepins on the P2ES except 56
-' --
-
-    WIDTH           = 320
-    HEIGHT          = 240
-    XMAX            = WIDTH-1
-    YMAX            = HEIGHT-1
-    BUFFSZ          = WIDTH * HEIGHT
-    BPP             = vga.BYTESPERPX
-    BPL             = (WIDTH * HEIGHT) * BPP
 
     LABEL_COL       = 0
     DATA_COL        = 11
-' User-modifiable constants
+
 
 VAR
 
-    long _palette[256]
     long _strtemp[4]
     long _center, _basefreq, _span, _start, _end
     long _dly
 
     word _wf_x, _wf_y, _wf_width, _wf_height
-    byte _framebuffer[BUFFSZ]
 
     byte _offset
 
+
 OBJ
 
-    cfg         : "core.con.boardcfg.p2eval"
-    ser         : "com.serial.terminal.ansi"
-    time        : "time"
-    io          : "io"
-    vga         : "display.vga.bitmap-8bpp"
-'    vga         : "vga1"
-    int         : "string.integer"
-    fnt         : "font.5x8"
-    cc1101      : "wireless.transceiver.cc1101.spi"
+    ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
+    vga:    "display.vga.bitmap-8bpp" | BASEPIN=0, VF=10, VB=33, HF=16, HS=89, HB=85, HV=640
+    cc1101: "wireless.transceiver.cc1101" | CS=32+3, SCK=32+2, MOSI=32+0, MISO=32+1, SPI_FREQ=5_000_000
+    int:    "string"
+    fnt:    "font.5x8"
 
-PUB Main() | lna, dvga, cmd, rxbw, intfreq
 
-    fullspecpalette()
-'    greyscalepalette()
+PUB main() | lna, dvga, cmd, rxbw, intfreq
+
     setup()
     _center := 433_800_000                                    ' 300_000_000..348_000_000, 387_000_000..464_000_000, 779_000_000..928_000_000
     _span := 250_000                                          ' Freq span from base freq
     _start := _center - (_span/2)
     _end := _center + (_span/2)
-
+    _basefreq := _start
     cc1101.gpio0(cc1101.IO_HI_Z)
     cc1101.idle()                                               ' Change to Idle while changing settings
-    cc1101.autocal(cc1101.IDLE_RXTX)
-    cc1101.carrierfreq(_basefreq)
-    cc1101.syncmode(cc1101.SYNCMODE_3032_CS)
-    cc1101.carriersense(14)
-    cc1101.magntarget(24)
-    cc1101.dvgagain(-3)
-    cc1101.lnagain(0)
-    cc1101.rxbandwidth(58)
-    cc1101.agcmode(cc1101.AGC_OFF)
-    cc1101.dcblock(FALSE)
-    cc1101.rxmode()
+    cc1101.auto_cal_mode(cc1101.IDLE_RXTX)
+    cc1101.carrier_freq(_basefreq)
+    cc1101.syncwd_mode(cc1101.SYNCMODE_3032_CS)
+    cc1101.carrier_sense_thresh(14)
+    cc1101.magn_target(24)
+    cc1101.dvga_gain(-3)
+    cc1101.lna_gain(0)
+    cc1101.rx_bw(58)
+    cc1101.agc_mode(cc1101.AGC_OFF)
+    cc1101.dc_block_ena(FALSE)
+    cc1101.rx_mode()
 
     lna := dvga := rxbw := 0
     intfreq := 380859
@@ -98,9 +69,9 @@ PUB Main() | lna, dvga, cmd, rxbw, intfreq
 
 ' Waterfall position, width, height
     _wf_x := 0
-    _wf_y := vga.fontheight() * 6
+    _wf_y := vga.font_height() * 6
     _wf_width := _wf_x+300
-    _wf_height := _wf_y+(vga.fontheight() * 12)-4
+    _wf_height := _wf_y+(vga.font_height() * 12)-4
 
     vga.box(_wf_x, _wf_y, _wf_width, _wf_height, 255, FALSE)                       ' Draw frame around waterfall
     displaysettings()
@@ -108,36 +79,36 @@ PUB Main() | lna, dvga, cmd, rxbw, intfreq
     drawscale(_wf_width+5, _wf_y, _wf_height-_wf_y)                                      ' Draw the color scale (for RSSI)
     repeat
         waterfall(_wf_x, _wf_y, _wf_width, _wf_height, _basefreq, _span)
-        if lookdown(cmd := ser.rxcheck(): 32..127)
+        if lookdown(cmd := ser.getchar_noblock(): 32..127)
             case cmd
                 "=":
                     lna := (lna + 1) <# 7
-                    cc1101.lnagain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                    cc1101.lna_gain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
                 "-":
                     lna := (lna - 1) #> 0
-                    cc1101.lnagain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                    cc1101.lna_gain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
                 "]":
                     dvga := (dvga + 1) <# 7
-                    cc1101.dvgagain(lookupz(dvga: -3, -2, -1, 0))
+                    cc1101.dvga_gain(lookupz(dvga: -3, -2, -1, 0))
                 "[":
                     dvga := (dvga - 1) #> 0
-                    cc1101.dvgagain(lookupz(dvga: -3, -2, -1, 0))
+                    cc1101.dvga_gain(lookupz(dvga: -3, -2, -1, 0))
                 ";":
                     _offset := (_offset - 1) #> 138
                 "'":
                     _offset := (_offset + 1) <# 255
                 ".":
                     rxbw := (rxbw + 1) <# 15
-                    cc1101.rxbandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                    cc1101.rx_bw(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
                 ",":
                     rxbw := (rxbw - 1) #> 0
-                    cc1101.rxbandwidth(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                    cc1101.rx_bw(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
                 "p":
                     intfreq := (intfreq + 25390) <# 787109
-                    cc1101.intfreq(intfreq)
+                    cc1101.interm_freq(intfreq)
                 "o":
                     intfreq := (intfreq - 25390) #> 25390
-                    cc1101.intfreq(intfreq)
+                    cc1101.interm_freq(intfreq)
                 "s":
                     _span := (_span - 10_000) #> 10_000
                 "S":
@@ -155,52 +126,55 @@ PUB Main() | lna, dvga, cmd, rxbw, intfreq
                     ser.printf("%d\n", _dly)
 
                 other:
-            cc1101.rxmode()
+            cc1101.rx_mode()
             displaysettings()                                   ' Update the settings display
 
-PUB DisplaySettings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
 
-    lna := cc1101.lnagain()
-    dvga := cc1101.dvgagain()
-    rxbw := cc1101.rxbandwidth()
-    ifreq := cc1101.intfreq()
+PUB displaysettings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
+
+    vga.clear()
+    lna := cc1101.lna_gain()
+    dvga := cc1101.dvga_gain()
+    rxbw := cc1101.rx_bw()
+    ifreq := cc1101.interm_freq()
 
     vga.fgcolor(255)
-    vga.position(0, 2)
+    vga.pos_xy(0, 2)
 
-    decthousands(_basefreq, ",") ' XXX should be able to use the return value from this, but it doesn't work with the vga object
+    decthousands(_basefreq, ",")
     vga.printf("%sHz", @_strtemp)
     decthousands(_span, ",")
     vga.printf("   Span: %sHz   ", @_strtemp)
 
     startrow := ((_wf_y + _wf_height+4) / vga.fontheight())
 
-    vga.position(LABEL_COL, startrow)
-    vga.printf("LNA Gain: ")
-    vga.position(DATA_COL, startrow)
+    vga.pos_xy(LABEL_COL, startrow)
+    vga.str(@"LNA Gain: ")
+    vga.pos_xy(DATA_COL, startrow)
     vga.printf("%ddB ", lna)
 
-    vga.position(LABEL_COL, startrow+1)
-    vga.printf("DVGA Gain: ")
-    vga.position(DATA_COL, startrow+1)
+    vga.pos_xy(LABEL_COL, startrow+1)
+    vga.str(@"DVGA Gain: ")
+    vga.pos_xy(DATA_COL, startrow+1)
     vga.printf("%ddB ", dvga)
 
-    vga.position(LABEL_COL, startrow+2)
-    vga.printf("RX BW: ")
-    vga.position(DATA_COL, startrow+2)
+    vga.pos_xy(LABEL_COL, startrow+2)
+    vga.str(@"RX BW: ")
+    vga.pos_xy(DATA_COL, startrow+2)
     vga.printf("%dkHz  ", rxbw)
 
-    vga.position(LABEL_COL, startrow+3)
-    vga.printf("IF: ")
-    vga.position(DATA_COL, startrow+3)
-    ifnot ifreq/1000 > (rxbw/2)
+    vga.pos_xy(LABEL_COL, startrow+3)
+    vga.str(@"IF: ")
+    vga.pos_xy(DATA_COL, startrow+3)
+    ifnot ( ifreq/1000 > (rxbw/2) )
         vga.fgcolor(190)
     else
         vga.fgcolor(255)
     vga.printf("%dHz ", ifreq)
     vga.fgcolor(255)
 
-PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right, c, freqstep
+
+PUB waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right, c, freqstep
 
     left := sx + 1
     top := sy + 1
@@ -209,7 +183,7 @@ PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right,
     freqstep := (span/(ex-sx))                                  ' *CC1101 Freq resolution is actually 397Hz
 
     repeat x from left to right
-        cc1101.carrierfreq(base_freq + (freqstep * (x-left)))
+        cc1101.carrier_freq(base_freq + (freqstep * (x-left)))
         c := (cc1101.rssi()+_offset)
         vga.plot(x, top, c)
 {
@@ -222,7 +196,8 @@ PUB Waterfall(sx, sy, ex, ey, base_freq, span) | x, y, left, top, bottom, right,
 '    repeat 2
     vga.scrolldown(left, top, right, bottom)
 
-PRI DrawScale(x, y, ht) | idx, color, scl_width, bottom, top, range
+
+PRI drawscale(x, y, ht) | idx, color, scl_width, bottom, top, range
 ' Draw the color scale setup at program start
     range := bottom := y+ht
     top := y
@@ -232,19 +207,20 @@ PRI DrawScale(x, y, ht) | idx, color, scl_width, bottom, top, range
         color := (range-idx)                                ' Skip every other color in the scale
         vga.Line(x, idx, x+scl_width, idx, color)               '   so most of it can be fit on screen
 
-PRI DecThousands(n, sep_char): ptr_str | instr[4], inlen, idx, outstr[4], outlen, outidx, sepidx
+
+PRI decthousands(n, sep_char): ptr_str | instr[4], inlen, idx, outstr[4], outlen, outidx, sepidx
 ' Display a decimal number (unsigned int) with thousands separators
 '   n:          0..2147483647
 '   sep_char:   32..127 (ASCII character)
     case n                                                  ' Validate number
         0..POSX:
         other:
-            return string("ERR")                            ' Return "ERR" if out of range
+            return @"ERR"                            ' Return "ERR" if out of range
 
     case sep_char                                           ' Validate separator character
         32..127:
         other:
-            return string("ERR")
+            return @"ERR"
 
     instr := 0
     outstr := 0
@@ -270,40 +246,40 @@ PRI DecThousands(n, sep_char): ptr_str | instr[4], inlen, idx, outstr[4], outlen
     longmove(@_strtemp, @outstr, 4)
     return @outstr
 
-PUB Setup()
 
-    ser.start(SER_BAUD)
+PUB setup()
+
+    ser.start()
     ser.clear()
-    ser.printf("Serial terminal started - p2 @ %dMHz\n", clkfreq/1000000)
+    ser.printf("Serial terminal started - p2 @ %dMHz\n\r", clkfreq/1000000)
 
-'    vga.settimings(10, 33, 16, 96, 48, 640) ' capture
-    vga.settimings(10, 33, 16, 89, 85, 640)
-    if vga.start(VGA_BASEPIN, @_framebuffer, @_palette, WIDTH, HEIGHT)
-'        ser.strln(string("VGA 8bpp driver started"))
-        vga.fontspacing(1, 1)
-        vga.fontscale(1)
-        vga.fontsize(fnt.WIDTH, fnt.HEIGHT)
-        vga.fontaddress(fnt.baseaddr())
-        vga.clear()
-        ser.strln(string("VGA 8bpp driver started"))
+    vga.defaults()
+    fullspecpalette()
+    vga.start()
+    vga.set_font(fnt.ptr, fnt.setup)
+    vga.char_attrs(vga.TERMINAL)
+    vga.clear()
+    ser.strln(@"VGA 8bpp driver started")
+    vga.fgcolor(255)
+
+    if ( cc1101.start() )
+        ser.strln(@"CC1101 driver started")
     else
-        ser.strln(string("VGA 8bpp driver failed to start"))
+        ser.strln(@"CC1101 driver failed to start - halting")
         repeat
 
-    if cc1101.startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SCK_FREQ)
-        ser.strln(string("CC1101 driver started"))
-    else
-        ser.strln(string("CC1101 driver failed to start - halting"))
-        repeat
 
-PUB GreyScalePalette() | i
+PUB greyscalepalette() | i, p
 
+    p := vga.palette_ptr()
     repeat i from 0 to 255
-        _palette[i] := 0 | (i << 16) | (i << 8) | i
+        long[p][i] := 0 | (i << 16) | (i << 8) | i
 
-PUB FullSpecPalette() | i, r, g, b, c
+
+PUB fullspecpalette() | i, r, g, b, c, p
 ' Set up palette
     r := g := b := c := 0
+    p := vga.palette_ptr()
     repeat i from 0 to 255
         case i
             0..31:
@@ -338,27 +314,7 @@ PUB FullSpecPalette() | i, r, g, b, c
                 r := g := b := 255
 
         c := 0 | (r << 16) | (g << 8) | b
-        _palette[i] := c
-    _palette[0] := $00_00_00_00
+        long[p][i] := c
+    long[p][0] := $00_00_00_00
 
-{
-    --------------------------------------------------------------------------------------------------------
-    TERMS OF USE: MIT License
-
-    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-    associated documentation files (the "Software"), to deal in the Software without restriction, including
-    without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
-    following conditions:
-
-    The above copyright notice and this permission notice shall be included in all copies or substantial
-    portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-    LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-    --------------------------------------------------------------------------------------------------------
-}
 
