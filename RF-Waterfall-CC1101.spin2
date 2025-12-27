@@ -10,6 +10,8 @@
 ----------------------------------------------------------------------------------------------------
 }
 {Spin2_v51}
+#define FNT_POS_NOGRID
+#pragma exportdef(FNT_POS_NOGRID)
 CON
 
     _clkfreq        = 250_000_000
@@ -17,12 +19,11 @@ CON
 
 
     LABEL_COL       = 0
-    DATA_COL        = 11
+    DATA_COL        = 12
 
 
 VAR
 
-    long _start, _end
     byte _offset
 
 
@@ -43,8 +44,9 @@ con
         long dvga_gain, ...
         long rx_bw, ...
         long interm_freq, ...
-        long base_freq, ...
+        long start_freq, ...
         long center_freq, ...
+        long end_freq, ...
         long span, ...
         word acq_delay, ...
         long lnagain_idx, ...
@@ -52,14 +54,19 @@ con
         long rxbw_idx, ...
         byte settings_changed)
 
+    struct gui_config_s(...
+        long freq_pix_scl, ...
+        long freq_txt_scl)
+
 
 var
 
     radio_config_s  rf_config
+    gui_config_s    gui_config
     long _cap
 
 
-PUB main() | lna, dvga, cmd, rxbw, intfreq
+PUB main() | cmd, f, fs, grad
 
     setup()
 
@@ -78,11 +85,23 @@ PUB main() | lna, dvga, cmd, rxbw, intfreq
     waitms(100)
 
     display_settings()
-
+    fs := (rf_config.span/wfall._width)
     repeat
         repeat
         until _cap
         wfall.draw()
+        ' draw graduations for frequency along the waterfall
+        repeat f from rf_config.start_freq to rf_config.end_freq step fs
+            grad := (f-rf_config.start_freq) / gui_config.freq_pix_scl
+            ifnot ( f // 20 )
+                vga.line(   grad, 40, ...
+                            grad, 47, 255)
+            ifnot ( grad // 40 )
+                vga.pos_xy(grad, 3*vga.font_height() )
+                vga.printf(@"%3.3d", f/1000000)
+                vga.pos_xy(grad, 4*vga.font_height() )
+                vga.printf(@".%03.3d", (f//1000000)/1000)
+
         if lookdown(cmd := ser.getchar_noblock(): 32..127)
             case cmd
                 "=":
@@ -141,11 +160,11 @@ PUB main() | lna, dvga, cmd, rxbw, intfreq
                     rf_config.settings_changed := true
 
                 "b":
-                    rf_config.base_freq := (rf_config.base_freq - 50_000) #> 300_000_000
+                    rf_config.start_freq := (rf_config.start_freq - 50_000) #> 300_000_000
                     rf_config.settings_changed := true
 
                 "B":
-                    rf_config.base_freq := (rf_config.base_freq + 50_000) <# 928_000_000
+                    rf_config.start_freq := (rf_config.start_freq + 50_000) <# 928_000_000
                     rf_config.settings_changed := true
 
                 "d":
@@ -165,7 +184,7 @@ PUB main() | lna, dvga, cmd, rxbw, intfreq
 dat lna_gains long 8, -17, -14, -11, -9, -7, -6, -2, 0
 dat dvga_gains long 4, -3, -2, -1, 0
 dat rx_bws word 16, 812, 650, 541, 464, 406, 325, 270, 232, 203, 162, 135, 116, 102, 81, 68, 58
-PUB display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
+PUB display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, dc
 
     if ( rf_config.settings_changed )
         ' wait for the settings to be committed before updating the display
@@ -175,30 +194,33 @@ PUB display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
     vga.clear()
 
     vga.fgcolor(255)
-    vga.pos_xy(0, 2)
-    vga.printf("%sHz", dec_thousands(rf_config.base_freq, ",") )
+    lc := LABEL_COL * vga.font_width()
+    dc := DATA_COL * vga.font_width()
+    vga.pos_xy(0, 0)
+    vga.printf("%sHz", dec_thousands(rf_config.start_freq, ",") )
+    vga.pos_xy(160, 0)
     vga.printf("   Span: %sHz   ", dec_thousands(rf_config.span, ",") )
 
     startrow := ( (wfall._sy + wfall._height+4) / vga.fontheight() )
 
-    vga.pos_xy(LABEL_COL, startrow)
+    vga.pos_xy(lc, startrow*vga.font_height() )
     vga.str(@"LNA Gain: ")
-    vga.pos_xy(DATA_COL, startrow)
+    vga.pos_xy(dc, startrow*vga.font_height() )
     vga.printf("%ddB ", rf_config.lna_gain)
 
-    vga.pos_xy(LABEL_COL, startrow+1)
+    vga.pos_xy(lc, (startrow+1) * vga.font_height() )
     vga.str(@"DVGA Gain: ")
-    vga.pos_xy(DATA_COL, startrow+1)
+    vga.pos_xy(dc, (startrow+1) * vga.font_height() )
     vga.printf("%ddB ", rf_config.dvga_gain)
 
-    vga.pos_xy(LABEL_COL, startrow+2)
+    vga.pos_xy(lc, (startrow+2) * vga.font_height() )
     vga.str(@"RX BW: ")
-    vga.pos_xy(DATA_COL, startrow+2)
+    vga.pos_xy(dc, (startrow+2) * vga.font_height() )
     vga.printf("%dkHz  ", rf_config.rx_bw)
 
-    vga.pos_xy(LABEL_COL, startrow+3)
+    vga.pos_xy(lc, (startrow+3) * vga.font_height() )
     vga.str(@"IF: ")
-    vga.pos_xy(DATA_COL, startrow+3)
+    vga.pos_xy(dc, (startrow+3) * vga.font_height() )
     ifnot ( rf_config.interm_freq/1000 > (rf_config.rx_bw/2) )
         vga.fgcolor(190)                        ' current IF is bad; color it red
     else
@@ -207,6 +229,8 @@ PUB display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
     vga.fgcolor(255)
 
     draw_scale(wfall._right+5, wfall._sy, wfall._height)
+    gui_config.freq_pix_scl := rf_config.span/wfall._width
+    gui_config.freq_txt_scl := rf_config.span/vga.text_cols()
 
 
 var long _radio_stack[100], _rssi[300]
@@ -221,16 +245,15 @@ PUB cog_read_rssi() | i, freqstep, f
         repeat
 
 
-
-    _start := rf_config.center_freq - (rf_config.span/2)
-    _end := rf_config.center_freq + (rf_config.span/2)
     rf_config.span := 1_000_000                          ' Freq span from base freq
-    rf_config.base_freq := _start
+    rf_config.start_freq := rf_config.center_freq - (rf_config.span/2)
+    rf_config.end_freq := rf_config.center_freq + (rf_config.span/2)
+    rf_config.start_freq := rf_config.start_freq
 
     cc1101.gpio0(cc1101.IO_HI_Z)
     cc1101.idle()                               ' Change to Idle while changing settings
     cc1101.auto_cal_mode(cc1101.IDLE_RXTX)
-    cc1101.carrier_freq(rf_config.base_freq)
+    cc1101.carrier_freq(rf_config.start_freq)
     cc1101.syncwd_mode(cc1101.SYNCMODE_3032_CS)
     cc1101.carrier_sense_thresh(14)
     cc1101.magn_target(24)
@@ -249,7 +272,7 @@ PUB cog_read_rssi() | i, freqstep, f
 
     repeat
         if ( rf_config.settings_changed )
-            ser.strln(@"settings changed")
+            'ser.strln(@"settings changed")
             cc1101.idle()
             rf_config.lna_gain := lna_gains[1+rf_config.lnagain_idx]
             rf_config.dvga_gain := dvga_gains[1+rf_config.dvgagain_idx]
@@ -258,17 +281,17 @@ PUB cog_read_rssi() | i, freqstep, f
             cc1101.dvga_gain(rf_config.dvga_gain)
             cc1101.rx_bw(rf_config.rx_bw)
             cc1101.interm_freq(rf_config.interm_freq)
-            ser.strln(@"done")
+            'ser.strln(@"done")
             cc1101.rx_mode()
             waitus(2000)
-            ser.printf(@"base_freq=%d  end=%d  step=%d  offset=%d\n\r", rf_config.base_freq, rf_config.base_freq+rf_config.span, freqstep, _offset)
+            'ser.printf(@"start_freq=%d  end=%d  step=%d  offset=%d\n\r", rf_config.start_freq, rf_config.start_freq+rf_config.span, freqstep, _offset)
             rf_config.settings_changed := false
 
         freqstep := rf_config.span/wfall._width ' calc step from ratio of freq span:spec plot width
 
         i := 0
         _cap := false
-        repeat f from rf_config.base_freq to rf_config.base_freq+rf_config.span step freqstep
+        repeat f from rf_config.start_freq to rf_config.start_freq+rf_config.span step freqstep
             cc1101.carrier_freq(f)
 '            waitus(rf_config.acq_delay)                            ' give RSSI time to settle
             _rssi[i++] := (cc1101.rssi()+_offset)
