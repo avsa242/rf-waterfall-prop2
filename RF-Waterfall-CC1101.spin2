@@ -1,16 +1,15 @@
 {
-    --------------------------------------------
-    Filename: RF-Waterfall-CC1101.spin2
-    Description: Display received power levels in the frequency domain
-        as a "waterfall"
-        Utilizes ISM-band transceiver IC's (CC1101 version)
-    Author: Jesse Burt
-    Copyright (c) 2020
-    Started: Apr 6, 2020
-    Updated: Apr 28, 2020
-    See end of file for terms of use.
-    --------------------------------------------
+----------------------------------------------------------------------------------------------------
+    Filename:       RF-Waterfall-CC1101.spin2
+    Description:    RF Waterfall/Spectrogram
+        * CC1101
+    Author:         Jesse Burt
+    Started:        Apr 6, 2020
+    Updated:        Dec 27, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
 }
+{Spin2_v51}
 CON
 
     _clkfreq        = 250_000_000
@@ -23,21 +22,41 @@ CON
 
 VAR
 
-    long _center, _basefreq, _span, _start, _end
-    long _dly
-
-
+    long _start, _end
     byte _offset
 
 
 OBJ
 
     ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
-    vga:    "display.vga.bitmap-8bpp" | BASEPIN=0, VF=10, VB=33, HF=16, HS=89, HB=85, HV=640
-    cc1101: "wireless.transceiver.cc1101" | CS=32+3, SCK=32+2, MOSI=32+0, MISO=32+1, SPI_FREQ=5_000_000
+    vga:    "display.vga.bitmap-8bpp" | BASEPIN=24, VF=10, VB=33, HF=16, HS=89, HB=85, HV=640
+    cc1101: "wireless.transceiver.cc1101" | CS=8+0, SCK=8+1, MOSI=8+2, MISO=8+3, SPI_FREQ=5_000_000
     str:    "string"
     fnt:    "font.5x8"
     wfall:  "metrology.waterfall"
+
+
+con
+
+    struct radio_config_s(...
+        long lna_gain, ...
+        long dvga_gain, ...
+        long rx_bw, ...
+        long interm_freq, ...
+        long base_freq, ...
+        long center_freq, ...
+        long span, ...
+        word acq_delay, ...
+        long lnagain_idx, ...
+        long dvgagain_idx, ...
+        long rxbw_idx, ...
+        byte settings_changed)
+
+
+var
+
+    radio_config_s  rf_config
+    long _cap
 
 
 PUB main() | lna, dvga, cmd, rxbw, intfreq
@@ -45,27 +64,7 @@ PUB main() | lna, dvga, cmd, rxbw, intfreq
     setup()
 
     ' set initial RF parameters
-    _center := 434_375_000                      ' 300_000_000..348_000_000, 387_000_000..464_000_000, 779_000_000..928_000_000
-    _span := 1_000_000                          ' Freq span from base freq
-    _start := _center - (_span/2)
-    _end := _center + (_span/2)
-    _basefreq := _start
-    cc1101.gpio0(cc1101.IO_HI_Z)
-    cc1101.idle()                               ' Change to Idle while changing settings
-    cc1101.auto_cal_mode(cc1101.IDLE_RXTX)
-    cc1101.carrier_freq(_basefreq)
-    cc1101.syncwd_mode(cc1101.SYNCMODE_3032_CS)
-    cc1101.carrier_sense_thresh(14)
-    cc1101.magn_target(24)
-    cc1101.dvga_gain(-3)
-    cc1101.lna_gain(0)
-    cc1101.rx_bw(58)
-    cc1101.agc_mode(cc1101.AGC_OFF)
-    cc1101.dc_block_ena(false)
-    cc1101.rx_mode()
-
-    lna := dvga := rxbw := 0
-    intfreq := 380859
+    rf_config.center_freq := 434_375_000                      ' 300_000_000..348_000_000, 387_000_000..464_000_000, 779_000_000..928_000_000
     _offset := 138 #> 138
 
     ' set up the waterfall initial parameters
@@ -75,118 +74,205 @@ PUB main() | lna, dvga, cmd, rxbw, intfreq
                 @_rssi, ...                     ' point to the table of acquired RSSI values
                 300)                            '   300 entries long
     wfall.set_color_scale(1)
+    cogspin(NEWCOG, cog_read_rssi(), @_radio_stack)
+    waitms(100)
 
     display_settings()
 
     repeat
-        read_rssi()
+        repeat
+        until _cap
         wfall.draw()
         if lookdown(cmd := ser.getchar_noblock(): 32..127)
             case cmd
                 "=":
-                    lna := (lna + 1) <# 7
-                    cc1101.lna_gain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                    rf_config.lnagain_idx++
+                    if ( rf_config.lnagain_idx >= lna_gains[0] )
+                        rf_config.lnagain_idx--
+                    rf_config.settings_changed := true
                 "-":
-                    lna := (lna - 1) #> 0
-                    cc1101.lna_gain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
+                    rf_config.lnagain_idx--
+                    if ( rf_config.lnagain_idx < 0 )
+                        rf_config.lnagain_idx++
+                    rf_config.settings_changed := true
                 "]":
-                    dvga := (dvga + 1) <# 7
-                    cc1101.dvga_gain(lookupz(dvga: -3, -2, -1, 0))
+                    rf_config.dvgagain_idx++
+                    if ( rf_config.dvgagain_idx >= dvga_gains[0] )
+                        rf_config.dvgagain_idx--
+                    rf_config.settings_changed := true
                 "[":
-                    dvga := (dvga - 1) #> 0
-                    cc1101.dvga_gain(lookupz(dvga: -3, -2, -1, 0))
+                    rf_config.dvgagain_idx--
+                    if ( rf_config.dvgagain_idx < 0 )
+                        rf_config.dvgagain_idx++
+                    rf_config.settings_changed := true
                 ";":
                     _offset := (_offset - 1) #> 138
+                    rf_config.settings_changed := true
+
                 "'":
                     _offset := (_offset + 1) <# 255
+                    rf_config.settings_changed := true
+
                 ".":
-                    rxbw := (rxbw + 1) <# 15
-                    cc1101.rx_bw(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                    rf_config.rxbw_idx++
+                    if ( rf_config.rxbw_idx >= rx_bws[0] )
+                        rf_config.rxbw_idx--
+                    rf_config.settings_changed := true
                 ",":
-                    rxbw := (rxbw - 1) #> 0
-                    cc1101.rx_bw(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, 325, 406, 464, 541, 650, 812))
+                    rf_config.rxbw_idx--
+                    if ( rf_config.rxbw_idx < 0 )
+                        rf_config.rxbw_idx++
+                    rf_config.settings_changed := true
+
                 "p":
-                    intfreq := (intfreq + 25390) <# 787109
-                    cc1101.interm_freq(intfreq)
+                    rf_config.interm_freq := (rf_config.interm_freq + 25390) <# 787109
+                    rf_config.settings_changed := true
+
                 "o":
-                    intfreq := (intfreq - 25390) #> 25390
-                    cc1101.interm_freq(intfreq)
+                    rf_config.interm_freq := (rf_config.interm_freq - 25390) #> 25390
+                    rf_config.settings_changed := true
+
                 "s":
-                    _span := (_span - 10_000) #> 10_000
+                    rf_config.span := (rf_config.span - 10_000) #> 10_000
+                    rf_config.settings_changed := true
+
                 "S":
-                    _span := (_span + 10_000) <# 5_000_000
+                    rf_config.span := (rf_config.span + 10_000) <# 5_000_000
+                    rf_config.settings_changed := true
+
                 "b":
-                    _basefreq := (_basefreq - 50_000) #> 300_000_000
+                    rf_config.base_freq := (rf_config.base_freq - 50_000) #> 300_000_000
+                    rf_config.settings_changed := true
+
                 "B":
-                    _basefreq := (_basefreq + 50_000) <# 928_000_000
+                    rf_config.base_freq := (rf_config.base_freq + 50_000) <# 928_000_000
+                    rf_config.settings_changed := true
+
                 "d":
-                    _dly := (_dly-1) #> 0
-                    ser.printf("%d\n\r", _dly)
+                    rf_config.acq_delay := (rf_config.acq_delay-1) #> 0
+                    ser.printf("%d\n\r", rf_config.acq_delay)
+                    rf_config.settings_changed := true
+
                 "D":
-                    _dly := (_dly+1) <# 1000
-                    ser.printf("%d\n\r", _dly)
+                    rf_config.acq_delay := (rf_config.acq_delay+1) <# 1000
+                    ser.printf("%d\n\r", rf_config.acq_delay)
+                    rf_config.settings_changed := true
+
                 other:
             display_settings()                                   ' Update the settings display
 
 
+dat lna_gains long 8, -17, -14, -11, -9, -7, -6, -2, 0
+dat dvga_gains long 4, -3, -2, -1, 0
+dat rx_bws word 16, 812, 650, 541, 464, 406, 325, 270, 232, 203, 162, 135, 116, 102, 81, 68, 58
 PUB display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
 
+    if ( rf_config.settings_changed )
+        ' wait for the settings to be committed before updating the display
+        repeat
+        until ( rf_config.settings_changed == false )
+
     vga.clear()
-    lna := cc1101.lna_gain()
-    dvga := cc1101.dvga_gain()
-    rxbw := cc1101.rx_bw()
-    ifreq := cc1101.interm_freq()
 
     vga.fgcolor(255)
     vga.pos_xy(0, 2)
-    vga.printf("%sHz", dec_thousands(_basefreq, ",") )
-    vga.printf("   Span: %sHz   ", dec_thousands(_span, ",") )
+    vga.printf("%sHz", dec_thousands(rf_config.base_freq, ",") )
+    vga.printf("   Span: %sHz   ", dec_thousands(rf_config.span, ",") )
 
     startrow := ( (wfall._sy + wfall._height+4) / vga.fontheight() )
 
     vga.pos_xy(LABEL_COL, startrow)
     vga.str(@"LNA Gain: ")
     vga.pos_xy(DATA_COL, startrow)
-    vga.printf("%ddB ", lna)
+    vga.printf("%ddB ", rf_config.lna_gain)
 
     vga.pos_xy(LABEL_COL, startrow+1)
     vga.str(@"DVGA Gain: ")
     vga.pos_xy(DATA_COL, startrow+1)
-    vga.printf("%ddB ", dvga)
+    vga.printf("%ddB ", rf_config.dvga_gain)
 
     vga.pos_xy(LABEL_COL, startrow+2)
     vga.str(@"RX BW: ")
     vga.pos_xy(DATA_COL, startrow+2)
-    vga.printf("%dkHz  ", rxbw)
+    vga.printf("%dkHz  ", rf_config.rx_bw)
 
     vga.pos_xy(LABEL_COL, startrow+3)
     vga.str(@"IF: ")
     vga.pos_xy(DATA_COL, startrow+3)
-    ifnot ( ifreq/1000 > (rxbw/2) )
+    ifnot ( rf_config.interm_freq/1000 > (rf_config.rx_bw/2) )
         vga.fgcolor(190)                        ' current IF is bad; color it red
     else
         vga.fgcolor(255)
-    vga.printf("%sHz ", dec_thousands(ifreq, ",") )
+    vga.printf("%sHz ", dec_thousands(rf_config.interm_freq, ",") )
     vga.fgcolor(255)
 
     draw_scale(wfall._right+5, wfall._sy, wfall._height)
 
 
-var long _rssi[300]
-PUB read_rssi() | i, freqstep, f
+var long _radio_stack[100], _rssi[300]
+PUB cog_read_rssi() | i, freqstep, f
 ' Acquire RSSI measurement for each frequency within the currently set span
-    freqstep := _span/wfall._width              ' calc step from ratio of freq span:spec plot width
-    cc1101.idle()
-    cc1101.cal_freq_synth()
+
+    ' init radio
+    if ( cc1101.start() )
+        ser.strln(@"CC1101 driver started")
+    else
+        ser.strln(@"CC1101 driver failed to start - halting")
+        repeat
+
+
+
+    _start := rf_config.center_freq - (rf_config.span/2)
+    _end := rf_config.center_freq + (rf_config.span/2)
+    rf_config.span := 1_000_000                          ' Freq span from base freq
+    rf_config.base_freq := _start
+
+    cc1101.gpio0(cc1101.IO_HI_Z)
+    cc1101.idle()                               ' Change to Idle while changing settings
+    cc1101.auto_cal_mode(cc1101.IDLE_RXTX)
+    cc1101.carrier_freq(rf_config.base_freq)
+    cc1101.syncwd_mode(cc1101.SYNCMODE_3032_CS)
+    cc1101.carrier_sense_thresh(14)
+    cc1101.magn_target(24)
+    cc1101.agc_mode(cc1101.AGC_OFF)
+    cc1101.dc_block_ena(false)
     cc1101.rx_mode()
-    waitus(2000)                                ' wait for receiver to settle
+    freqstep := rf_config.span/wfall._width ' calc step from ratio of freq span:spec plot width
 
-    i := 0
-    repeat f from _basefreq to _basefreq+_span step freqstep
-        cc1101.carrier_freq(f)
-        waitus(_dly)                            ' give RSSI time to settle
-        _rssi[i++] := (cc1101.rssi()+_offset)
+    rf_config.acq_delay := 50
+    rf_config.lnagain_idx := 7
+    rf_config.dvgagain_idx := 3
+    rf_config.rxbw_idx := 15
+    rf_config.interm_freq := 380_859
 
+    rf_config.settings_changed := true
+
+    repeat
+        if ( rf_config.settings_changed )
+            ser.strln(@"settings changed")
+            cc1101.idle()
+            rf_config.lna_gain := lna_gains[1+rf_config.lnagain_idx]
+            rf_config.dvga_gain := dvga_gains[1+rf_config.dvgagain_idx]
+            rf_config.rx_bw := rx_bws[1+rf_config.rxbw_idx]
+            cc1101.lna_gain(rf_config.lna_gain)
+            cc1101.dvga_gain(rf_config.dvga_gain)
+            cc1101.rx_bw(rf_config.rx_bw)
+            cc1101.interm_freq(rf_config.interm_freq)
+            ser.strln(@"done")
+            cc1101.rx_mode()
+            waitus(2000)
+            ser.printf(@"base_freq=%d  end=%d  step=%d  offset=%d\n\r", rf_config.base_freq, rf_config.base_freq+rf_config.span, freqstep, _offset)
+            rf_config.settings_changed := false
+
+        freqstep := rf_config.span/wfall._width ' calc step from ratio of freq span:spec plot width
+
+        i := 0
+        _cap := false
+        repeat f from rf_config.base_freq to rf_config.base_freq+rf_config.span step freqstep
+            cc1101.carrier_freq(f)
+'            waitus(rf_config.acq_delay)                            ' give RSSI time to settle
+            _rssi[i++] := (cc1101.rssi()+_offset)
+        _cap := true
 
 PRI draw_scale(x, y, ht) | i, c, w, scl, ci
 ' Draw the color scale used by the waterfall
@@ -231,13 +317,6 @@ PUB setup()
     vga.clear()
     ser.strln(@"VGA 8bpp driver started")
     vga.fgcolor(255)
-
-    if ( cc1101.start() )
-        ser.strln(@"CC1101 driver started")
-    else
-        ser.strln(@"CC1101 driver failed to start - halting")
-        repeat
-
 
 PUB greyscalepalette() | i, p
 
@@ -287,4 +366,24 @@ PUB fullspecpalette() | i, r, g, b, c, p
         long[p][i] := c
     long[p][0] := $00_00_00_00
 
+
+dat
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
 
