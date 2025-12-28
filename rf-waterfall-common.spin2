@@ -5,7 +5,7 @@
         * Common code (shared by all variants of the application)
     Author:         Jesse Burt
     Started:        Dec 28, 2025
-    Updated:        Dec 25, 2025
+    Updated:        Dec 28, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 
@@ -50,7 +50,7 @@ var
     long            _cap
 
 
-pub application() | cmd, f, fs, grad
+pub application() | cmd
 
     gui_config.rssi_offset := rssi_offset
 '    longfill(@_radio_stack, $aaaa_aaaa, RADIO_STACK_SZ)'xxx stack debugging
@@ -69,24 +69,12 @@ pub application() | cmd, f, fs, grad
 '        ser.pos_xy(0,0)
 '        ser.hexdump_noascii(@_radio_stack, 0, 4, RADIO_STACK_SZ*4, 16)
     display_settings()
-    fs := (rf_config.span/wfall._width)
     repeat
         repeat
         until _cap
         wfall.draw()
-        ' draw graduations for frequency along the waterfall
-        repeat f from rf_config.start_freq to rf_config.end_freq step fs
-            grad := (f-rf_config.start_freq) / gui_config.freq_pix_scl
-            ifnot ( f // 20 )
-                vga.line(   grad, 40, ...
-                            grad, 47, 255)
-            ifnot ( grad // 40 )
-                vga.pos_xy(grad, 3*vga.font_height() )
-                vga.printf(@"%3.3d", f/1000000)
-                vga.pos_xy(grad, 4*vga.font_height() )
-                vga.printf(@".%03.3d", (f//1000000)/1000)
-
-        if ( lookdown(cmd := ser.getchar_noblock(): 32..127) )
+        cmd := ser.getchar_noblock()
+        if ( lookdown(cmd: 32..127) )
             case cmd
                 "=":
                     rf_config.lnagain_idx++
@@ -154,7 +142,7 @@ pub application() | cmd, f, fs, grad
             display_settings()                                   ' Update the settings display
 
 
-pub display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, dc
+pub display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, dc, f, fs, grad, gn
 ' Display the current application settings
 
     if ( rf_config.settings_changed )
@@ -202,6 +190,22 @@ pub display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, d
     draw_scale(wfall._right+5, wfall._sy, wfall._height)
     gui_config.freq_pix_scl := rf_config.span/wfall._width
     gui_config.freq_txt_scl := rf_config.span/vga.text_cols()
+
+    fs := (rf_config.span/wfall._width)
+
+    ' draw graduations for frequency along the waterfall
+    gn := 0
+    repeat f from rf_config.start_freq to rf_config.end_freq step fs
+        grad := (f-rf_config.start_freq) / gui_config.freq_pix_scl
+        ifnot ( gn // 20 )
+            vga.line(   grad, 40, ...
+                        grad, 47, 255)
+        ifnot ( gn // 40 )
+            vga.pos_xy(grad, 3*vga.font_height() )
+            vga.printf(@"%3.3d", f/1000000)
+            vga.pos_xy(grad, 4*vga.font_height() )
+            vga.printf(@".%03.3d", (f//1000000)/1000)
+        gn++
 
 
 var long _radio_stack[RADIO_STACK_SZ], _rssi[RSSI_CAPTURE_SZ]
