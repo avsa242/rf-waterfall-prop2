@@ -242,7 +242,7 @@ pub cog_read_rssi() | i, freqstep, f
         _cap := false
         repeat f from rf_config.start_freq to rf_config.start_freq+rf_config.span step freqstep
             radio.carrier_freq(f)
-'            waitus(rf_config.acq_delay)                            ' give RSSI time to settle
+            waitus(rf_config.acq_delay)                            ' give RSSI time to settle
             _rssi[i++] := (radio.rssi()+gui_config.rssi_offset)
         _cap := true
 
