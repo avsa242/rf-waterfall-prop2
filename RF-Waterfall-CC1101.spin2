@@ -21,6 +21,7 @@ con
 
     LABEL_COL       = 0
     DATA_COL        = 12
+    RADIO_STACK_SZ  = 50
 
 
 obj
@@ -81,7 +82,7 @@ dat
     '                # values, val0, .., valn
     lna_gains   long 8, -17, -14, -11, -9, -7, -6, -2, 0
     dvga_gains  long 4, -3, -2, -1, 0
-    rx_bws      word 16, 812, 650, 541, 464, 406, 325, 270, 232, 203, 162, 135, 116, 102, 81, 68, 58
+    rx_bws      long 16, 812, 650, 541, 464, 406, 325, 270, 232, 203, 162, 135, 116, 102, 81, 68, 58
 
     ' limits
     rssi_offset byte 138

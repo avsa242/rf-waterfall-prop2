@@ -17,7 +17,6 @@ con
     LABEL_COL       = 0
     DATA_COL        = 12
 
-    RADIO_STACK_SZ  = 150                       ' longs
     RSSI_CAPTURE_SZ = 300                       ' longs
 
 
@@ -53,7 +52,7 @@ var
 
 pub application() | cmd, f, fs, grad
 
-    _offset := 138 #> 138
+    _offset := rssi_offset
 '    longfill(@_radio_stack, $aaaa_aaaa, RADIO_STACK_SZ)'xxx stack debugging
 
     ' set up the waterfall initial parameters
