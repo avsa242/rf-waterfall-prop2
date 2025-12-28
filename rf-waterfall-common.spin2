@@ -40,6 +40,7 @@ con
     struct gui_config_s(...
         long freq_pix_scl, ...
         long freq_txt_scl, ...
+        long spec_scale, ...
         byte rssi_offset)
 
 
@@ -52,11 +53,12 @@ var
 
 pub application() | cmd
 
-    gui_config.rssi_offset := rssi_offset
+    gui_config.rssi_offset := 0
+    gui_config.spec_scale := (rssi_offset * 1_000) / 40
 '    longfill(@_radio_stack, $aaaa_aaaa, RADIO_STACK_SZ)'xxx stack debugging
 
     ' set up the waterfall initial parameters
-    wfall.init( 0, vga.font_height()*6, ...     ' x,y: leftmost, six text rows down from the top
+    wfall.init( 0, vga.font_height()*9, ...     ' x,y: leftmost, six text rows down from the top
                 300, vga.font_height()*12, ...  ' w,h: 300px, 12 text rows
                 @vga, ...                       ' attach to the vga object
                 @_rssi, ...                     ' point to the table of acquired RSSI values
@@ -72,6 +74,7 @@ pub application() | cmd
     repeat
         repeat
         until _cap
+        draw_spectrum_plot()
         wfall.draw()
         cmd := ser.getchar_noblock()
         if ( lookdown(cmd: 32..127) )
@@ -97,7 +100,7 @@ pub application() | cmd
                         rf_config.dvgagain_idx++
                     rf_config.settings_changed := true
                 ";":
-                    gui_config.rssi_offset := (gui_config.rssi_offset - 1) #> rssi_offset
+                    gui_config.rssi_offset := (gui_config.rssi_offset - 1) #> 0
                     rf_config.settings_changed := true
                 "'":
                     gui_config.rssi_offset := (gui_config.rssi_offset + 1) <# 255
@@ -198,27 +201,27 @@ pub display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, d
     repeat f from rf_config.start_freq to rf_config.end_freq step fs
         grad := (f-rf_config.start_freq) / gui_config.freq_pix_scl
         ifnot ( gn // 20 )
-            vga.line(   grad, 40, ...
-                        grad, 47, 255)
+            vga.line(   grad, 3*vga.font_height(), ...
+                        grad, 4*vga.font_height(), 255)
         ifnot ( gn // 40 )
-            vga.pos_xy(grad, 3*vga.font_height() )
+            vga.pos_xy(grad, 1*vga.font_height() )
             vga.printf(@"%3.3d", f/1000000)
-            vga.pos_xy(grad, 4*vga.font_height() )
+            vga.pos_xy(grad, 2*vga.font_height() )
             vga.printf(@".%03.3d", (f//1000000)/1000)
         gn++
+    wfall.set_ref_level(gui_config.rssi_offset)
 
 
 var long _radio_stack[RADIO_STACK_SZ], _rssi[RSSI_CAPTURE_SZ]
 pub cog_read_rssi() | i, freqstep, f
 ' Acquire RSSI measurement for each frequency within the currently set span
 
-    rf_config.span := 1_000_000                          ' Freq span from base freq
+    rf_config.span := 1_000_000                 ' Freq span from base freq
     rf_config.start_freq := rf_config.center_freq - (rf_config.span/2)
     rf_config.end_freq := rf_config.center_freq + (rf_config.span/2)
-    rf_config.start_freq := rf_config.start_freq
 
     radio_setup()
-    freqstep := rf_config.span/wfall._width ' calc step from ratio of freq span:spec plot width
+    freqstep := rf_config.span/wfall._width     ' calc step from ratio of freq span:spec plot width
 
     rf_config.settings_changed := true
 
@@ -242,8 +245,8 @@ pub cog_read_rssi() | i, freqstep, f
         _cap := false
         repeat f from rf_config.start_freq to rf_config.start_freq+rf_config.span step freqstep
             radio.carrier_freq(f)
-            waitus(rf_config.acq_delay)                            ' give RSSI time to settle
-            _rssi[i++] := (radio.rssi()+gui_config.rssi_offset)
+            waitus(rf_config.acq_delay)         ' give RSSI time to settle
+            _rssi[i++] := radio.rssi()+rssi_offset
         _cap := true
 
 
@@ -255,17 +258,23 @@ pri draw_scale(x, y, ht) | i, c, w, scl, ci, b, srng, oscl, omkr
     scl := (vga.MAX_COLOR+1)/ht                 ' scale color range to waterfall height
 
     srng := b-y
-    oscl := ( ( (255-138)*1_000)/srng)          ' scale RSSI offset range to color scale range
+    oscl := ( ( (255-0)*1_000)/srng)            ' scale RSSI offset range to color scale range
 
     ci := 0
     repeat i from b to y                        ' draw from bottom to the top
         vga.line(x, i, x+w, i, (ci*scl) )
         ci++
     ' draw a marker next to the scale indicating the current RSSI reference level
-    omkr := ( (gui_config.rssi_offset-138) ) * 1_000
+    omkr := ( (gui_config.rssi_offset) ) * 1_000
     vga.line(   x+w, b-(omkr / oscl), ...
                 x+w+5, b-(omkr / oscl), 255)
 
+
+pub draw_spectrum_plot() | x
+' Plot spectrum
+    vga.box(0, wfall._sy-(vga.font_height()*5), wfall._width, wfall._sy, 0, true)
+    repeat RSSI_CAPTURE_SZ with x
+        vga.plot(x, (wfall._sy-(_rssi[x]*1000)/gui_config.spec_scale), 255)
 
 
 var byte _tmp[15]
