@@ -1,0 +1,360 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       rf-waterfall-common.spin2
+    Description:    RF Waterfall/Spectrogram
+        * Common code (shared by all variants of the application)
+    Author:         Jesse Burt
+    Started:        Dec 28, 2025
+    Updated:        Dec 25, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+
+    NOTE: This is not a top-level application
+}
+
+con
+
+    LABEL_COL       = 0
+    DATA_COL        = 12
+
+    RADIO_STACK_SZ  = 150                       ' longs
+    RSSI_CAPTURE_SZ = 300                       ' longs
+
+
+con
+
+    struct radio_config_s(...
+        long lna_gain, ...
+        long dvga_gain, ...
+        long rx_bw, ...
+        long interm_freq, ...
+        long start_freq, ...
+        long center_freq, ...
+        long end_freq, ...
+        long span, ...
+        word acq_delay, ...
+        long lnagain_idx, ...
+        long dvgagain_idx, ...
+        long rxbw_idx, ...
+        byte settings_changed)
+
+    struct gui_config_s(...
+        long freq_pix_scl, ...
+        long freq_txt_scl)
+
+
+var
+
+    radio_config_s  rf_config
+    gui_config_s    gui_config
+    long            _cap
+    byte            _offset
+
+
+pub application() | cmd, f, fs, grad
+
+    _offset := 138 #> 138
+'    longfill(@_radio_stack, $aaaa_aaaa, RADIO_STACK_SZ)'xxx stack debugging
+
+    ' set up the waterfall initial parameters
+    wfall.init( 0, vga.font_height()*6, ...     ' x,y: leftmost, six text rows down from the top
+                300, vga.font_height()*12, ...  ' w,h: 300px, 12 text rows
+                @vga, ...                       ' attach to the vga object
+                @_rssi, ...                     ' point to the table of acquired RSSI values
+                300)                            '   300 entries long
+    wfall.set_color_scale(1)
+    cogspin(NEWCOG, cog_read_rssi(), @_radio_stack)
+    waitms(100)
+'    repeat
+'    xxx temporary: stack debugging
+'        ser.pos_xy(0,0)
+'        ser.hexdump_noascii(@_radio_stack, 0, 4, RADIO_STACK_SZ*4, 16)
+    display_settings()
+    fs := (rf_config.span/wfall._width)
+    repeat
+        repeat
+        until _cap
+        wfall.draw()
+        ' draw graduations for frequency along the waterfall
+        repeat f from rf_config.start_freq to rf_config.end_freq step fs
+            grad := (f-rf_config.start_freq) / gui_config.freq_pix_scl
+            ifnot ( f // 20 )
+                vga.line(   grad, 40, ...
+                            grad, 47, 255)
+            ifnot ( grad // 40 )
+                vga.pos_xy(grad, 3*vga.font_height() )
+                vga.printf(@"%3.3d", f/1000000)
+                vga.pos_xy(grad, 4*vga.font_height() )
+                vga.printf(@".%03.3d", (f//1000000)/1000)
+
+        if ( lookdown(cmd := ser.getchar_noblock(): 32..127) )
+            case cmd
+                "=":
+                    rf_config.lnagain_idx++
+                    if ( rf_config.lnagain_idx >= lna_gains[0] )
+                        rf_config.lnagain_idx--
+                    rf_config.settings_changed := true
+                "-":
+                    rf_config.lnagain_idx--
+                    if ( rf_config.lnagain_idx < 0 )
+                        rf_config.lnagain_idx++
+                    rf_config.settings_changed := true
+                "]":
+                    rf_config.dvgagain_idx++
+                    if ( rf_config.dvgagain_idx >= dvga_gains[0] )
+                        rf_config.dvgagain_idx--
+                    rf_config.settings_changed := true
+                "[":
+                    rf_config.dvgagain_idx--
+                    if ( rf_config.dvgagain_idx < 0 )
+                        rf_config.dvgagain_idx++
+                    rf_config.settings_changed := true
+                ";":
+                    _offset := (_offset - 1) #> rssi_offset
+                    rf_config.settings_changed := true
+                "'":
+                    _offset := (_offset + 1) <# 255
+                    rf_config.settings_changed := true
+                ".":
+                    rf_config.rxbw_idx++
+                    if ( rf_config.rxbw_idx >= rx_bws[0] )
+                        rf_config.rxbw_idx--
+                    rf_config.settings_changed := true
+                ",":
+                    rf_config.rxbw_idx--
+                    if ( rf_config.rxbw_idx < 0 )
+                        rf_config.rxbw_idx++
+                    rf_config.settings_changed := true
+                "p":
+                    rf_config.interm_freq := (rf_config.interm_freq + if_step) <# if_freq_max
+                    rf_config.settings_changed := true
+                "o":
+                    rf_config.interm_freq := (rf_config.interm_freq - if_step) #> if_freq_min
+                    rf_config.settings_changed := true
+                "s":
+                    rf_config.span := (rf_config.span - 10_000) #> 10_000
+                    rf_config.settings_changed := true
+                "S":
+                    rf_config.span := (rf_config.span + 10_000) <# 5_000_000
+                    rf_config.settings_changed := true
+                "b":
+                    rf_config.start_freq := (rf_config.start_freq - 50_000) #> freq_min
+                    rf_config.settings_changed := true
+                "B":
+                    rf_config.start_freq := (rf_config.start_freq + 50_000) <# freq_max
+                    rf_config.settings_changed := true
+                "d":
+                    rf_config.acq_delay := (rf_config.acq_delay-1) #> 0
+                    ser.printf("%d\n\r", rf_config.acq_delay)
+                    rf_config.settings_changed := true
+                "D":
+                    rf_config.acq_delay := (rf_config.acq_delay+1) <# 1000
+                    ser.printf("%d\n\r", rf_config.acq_delay)
+                    rf_config.settings_changed := true
+                other:
+            display_settings()                                   ' Update the settings display
+
+
+pub display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, dc
+' Display the current application settings
+
+    if ( rf_config.settings_changed )
+        ' wait for the settings to be committed before updating the display
+        repeat
+        until ( rf_config.settings_changed == false )
+
+    vga.clear()
+
+    vga.fgcolor(255)
+    lc := LABEL_COL * vga.font_width()
+    dc := DATA_COL * vga.font_width()
+    vga.pos_xy(0, 0)
+    vga.printf("%sHz", dec_thousands(rf_config.start_freq, ",") )
+    vga.pos_xy(160, 0)
+    vga.printf("   Span: %sHz   ", dec_thousands(rf_config.span, ",") )
+
+    startrow := ( (wfall._sy + wfall._height+4) / vga.fontheight() )
+
+    vga.pos_xy(lc, startrow*vga.font_height() )
+    vga.str(@"LNA Gain: ")
+    vga.pos_xy(dc, startrow*vga.font_height() )
+    vga.printf("%ddB ", rf_config.lna_gain)
+
+    vga.pos_xy(lc, (startrow+1) * vga.font_height() )
+    vga.str(@"DVGA Gain: ")
+    vga.pos_xy(dc, (startrow+1) * vga.font_height() )
+    vga.printf("%ddB ", rf_config.dvga_gain)
+
+    vga.pos_xy(lc, (startrow+2) * vga.font_height() )
+    vga.str(@"RX BW: ")
+    vga.pos_xy(dc, (startrow+2) * vga.font_height() )
+    vga.printf("%dkHz  ", rf_config.rx_bw)
+
+    vga.pos_xy(lc, (startrow+3) * vga.font_height() )
+    vga.str(@"IF: ")
+    vga.pos_xy(dc, (startrow+3) * vga.font_height() )
+    ifnot ( rf_config.interm_freq/1000 > (rf_config.rx_bw/2) )
+        vga.fgcolor(190)                        ' current IF is bad; color it red
+    else
+        vga.fgcolor(255)
+    vga.printf("%sHz ", dec_thousands(rf_config.interm_freq, ",") )
+    vga.fgcolor(255)
+
+    draw_scale(wfall._right+5, wfall._sy, wfall._height)
+    gui_config.freq_pix_scl := rf_config.span/wfall._width
+    gui_config.freq_txt_scl := rf_config.span/vga.text_cols()
+
+
+var long _radio_stack[RADIO_STACK_SZ], _rssi[RSSI_CAPTURE_SZ]
+pub cog_read_rssi() | i, freqstep, f
+' Acquire RSSI measurement for each frequency within the currently set span
+
+    rf_config.span := 1_000_000                          ' Freq span from base freq
+    rf_config.start_freq := rf_config.center_freq - (rf_config.span/2)
+    rf_config.end_freq := rf_config.center_freq + (rf_config.span/2)
+    rf_config.start_freq := rf_config.start_freq
+
+    radio_setup()
+    freqstep := rf_config.span/wfall._width ' calc step from ratio of freq span:spec plot width
+
+    rf_config.settings_changed := true
+
+    repeat
+        if ( rf_config.settings_changed )
+            radio.idle()
+            rf_config.lna_gain := lna_gains[1+rf_config.lnagain_idx]
+            rf_config.dvga_gain := dvga_gains[1+rf_config.dvgagain_idx]
+            rf_config.rx_bw := rx_bws[1+rf_config.rxbw_idx]
+            radio.lna_gain(rf_config.lna_gain)
+            radio.dvga_gain(rf_config.dvga_gain)
+            radio.rx_bw(rf_config.rx_bw)
+            radio.interm_freq(rf_config.interm_freq)
+            radio.rx_mode()
+            waitus(2000)
+            rf_config.settings_changed := false
+
+        freqstep := rf_config.span/wfall._width ' calc step from ratio of freq span:spec plot width
+
+        i := 0
+        _cap := false
+        repeat f from rf_config.start_freq to rf_config.start_freq+rf_config.span step freqstep
+            radio.carrier_freq(f)
+'            waitus(rf_config.acq_delay)                            ' give RSSI time to settle
+            _rssi[i++] := (radio.rssi()+_offset)
+        _cap := true
+
+
+pri draw_scale(x, y, ht) | i, c, w, scl, ci
+' Draw the color scale used by the waterfall
+    w := 5
+    scl := (vga.MAX_COLOR+1)/ht                 ' scale color range to waterfall height
+
+    ci := 0
+    repeat i from (y+ht) to y                   ' draw from bottom to the top
+        vga.line(x, i, x+w, i, (ci*scl) )
+        ci++
+
+
+var byte _tmp[15]
+pri dec_thousands(n, c): p
+' Convert an integer to a string representation with thousands separators
+'   n:  integer
+'   c:  character to use for separator (e.g., "," or ".")
+    bytefill(@_tmp, 0, 15)
+
+    if ( n >= 1_000_000 )
+        str.sprintf5(@_tmp, @"%d%c%03.3d%c%03.3d",  (n/1_000_000), c, ...
+                                                    (n//1_000_000)/1000, c, ...
+                                                    (n//1_000) )
+    elseif ( n >= 1_000 )
+        str.sprintf3(@_tmp, @"%d%c%03.3d",  (n/1_000), c, ...
+                                            (n//1_000) )
+
+    return @_tmp
+
+
+pub setup()
+
+    ser.start()
+    ser.clear()
+    ser.printf("Serial terminal started - p2 @ %dMHz\n\r", clkfreq/1000000)
+
+    vga.defaults()
+    fullspecpalette()
+    vga.start()
+    vga.set_font(fnt.ptr, fnt.setup)
+    vga.char_attrs(vga.TERMINAL)
+    vga.clear()
+    ser.strln(@"VGA 8bpp driver started")
+    vga.fgcolor(255)
+
+
+pub greyscalepalette() | i, p
+
+    p := vga.palette_ptr()
+    repeat i from 0 to 255
+        long[p][i] := 0 | (i << 16) | (i << 8) | i
+
+
+pub fullspecpalette() | i, r, g, b, c, p
+' Set up palette
+    r := g := b := c := 0
+    p := vga.palette_ptr()
+    repeat i from 0 to 255
+        case i
+            0..31:
+                r += 4
+                g := 0
+                b += 4
+            32..63:
+                r -= 4
+                g := 0
+                b := b
+            64..95:
+                r := 0
+                g += 4
+                b := b
+            96..127:
+                r := 0
+                g := g
+                b -= 4
+            128..159:
+                r += 4
+                g := g
+                b := b
+            160..191:
+                r := r
+                g -= 4
+                b := 0
+            192..254:
+                r := r
+                g += 4
+                b += 4
+            255:
+                r := g := b := 255
+
+        c := 0 | (r << 16) | (g << 8) | b
+        long[p][i] := c
+    long[p][0] := $00_00_00_00
+
+
+dat
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
+
