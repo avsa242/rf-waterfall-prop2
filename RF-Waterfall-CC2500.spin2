@@ -1,311 +1,100 @@
 {
-    --------------------------------------------
-    Filename: RF-waterfall-CC2500.spin2
-    Description: Display received power levels in the frequency domain
-        as a "waterfall"
-        Utilizes ISM-band transceiver IC's (CC2500 version)
-    Author: Jesse Burt
-    Copyright (c) 2023
-    Started: Apr 28, 2020
-    Updated: Jul 17, 2023
-    See end of file for terms of use.
-    --------------------------------------------
+----------------------------------------------------------------------------------------------------
+    Filename:       RF-Waterfall-CC2500.spin2
+    Description:    RF Waterfall/Spectrogram
+        * CC2500-specific application
+    Author:         Jesse Burt
+    Started:        Apr 6, 2020
+    Updated:        Dec 28, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
 }
-CON
+{Spin2_v51}
+#define FNT_POS_NOGRID
+#pragma exportdef(FNT_POS_NOGRID)
 
-' --
-    _clkfreq    = 250_000_000
-    _xtlfreq    = 20_000_000
+con
 
-    SER_BAUD    = 2_000_000
-
-    VGA_BASEPIN = 32                        ' 0, 8, 16, 24, 32, 40, 48
-' --
-
-    WIDTH       = 320
-    HEIGHT      = 240
-    XMAX        = WIDTH-1
-    YMAX        = HEIGHT-1
-    BUFFSZ      = WIDTH * HEIGHT
-
-    LABEL_COL   = 0
-    DATA_COL    = 11
+    _clkfreq        = 250_000_000
+    _xtlfreq        = 20_000_000
 
 
-VAR
+    LABEL_COL       = 0
+    DATA_COL        = 12
 
-    long _basefreq, _span
-    long _dly
-    long _rssi[320], _rssi_len
 
-    word _wf_x, _wf_y, _wf_width, _wf_height
-    byte _framebuffer[BUFFSZ]
+obj
 
-    byte _offset
-    byte _strtemp[14]
-
-OBJ
-
-    cfg:    "boardcfg.p2eval"
-    ser:    "com.serial.terminal.ansi"
-    vga:    "display.vga.bitmap-8bpp"
-    fnt:    "font.5x8"
-    cc2500: "wireless.transceiver.cc2500" | CS=0, SCK=1, MOSI=2, MISO=3, SPI_FREQ=6_500_000
+    ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
+    vga:    "display.vga.bitmap-8bpp" | BASEPIN=24, VF=10, VB=33, HF=16, HS=89, HB=85, HV=640
+    radio:  "wireless.transceiver.cc2500" | CS=0+8, SCK=0+9, MOSI=0+11, MISO=0+10, SPI_FREQ=1_000_000
     str:    "string"
-    waterfall:  "metrology.waterfall"
+    fnt:    "font.5x8"
+    wfall:  "metrology.waterfall"
 
-PUB main() | lna, dvga, cmd, rxbw, intfreq
 
-    vga.set_timings(10, 33, 16, 89, 85, 640)
-    full_spec_palette()
-'    grey_scale_palette
+pub main()
+
+    ' 2_400_000..2_483_500 (kHz)
+    rf_config.center_freq := 2_400_000
+
     setup()
+    application()
 
-    _basefreq := 2_400_000                      ' 2_400_000..2_483_500 (kHz)
-    _span := 1_000_000                          ' Freq span from base freq
 
-    cc2500.idle()                                 ' Change to Idle while changing settings
-    cc2500.auto_cal_mode(cc2500#IDLE_RXTX)
-    cc2500.carrier_freq(_basefreq)
-    cc2500.syncwd_mode(cc2500#SYNCMODE_3032_CS)
-    cc2500.carrier_sense_thresh(14)
-    cc2500.dvga_gain(-3)
-    cc2500.lna_gain(-17)
-    cc2500.rx_bw(58)
-    cc2500.interm_freq(380_859)
-    cc2500.agc_mode(cc2500#AGC_OFF)                              ' AGC_NORMAL, AGC_OFF
-    cc2500.dc_block_ena(FALSE)
-    cc2500.rx_mode()
+#include "rf-waterfall-common.spin2"            ' main application code common to all variants
 
-    lna := dvga := rxbw := 0
-    intfreq := 380859
-    _offset := 138 #> 138
 
-    { waterfall position, width, height }
-    _rssi_len := 300
-    waterfall.init(0, vga.font_height() * 6, _rssi_len, (vga.font_height() * 12)-4, @vga, @_rssi, _rssi_len)
-    waterfall.set_color_scale(1)
+pub radio_setup()
+' Radio model-specific setup/initialization
 
-    display_settings()
-
-    { Draw the color scale (for RSSI) }
-    draw_scale(waterfall._right+5, waterfall._sy, waterfall._height-waterfall._sy/4)
-    repeat
-        acquire_rssi()
-        waterfall.draw_framed()
-        if ( lookdown(cmd := ser.rx_check(): 32..127) )
-            case cmd
-                "=":
-                    lna := (lna + 1) <# 7
-                    cc2500.lna_gain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
-                "-":
-                    lna := (lna - 1) #> 0
-                    cc2500.lna_gain(lookupz(lna: -17, -14, -11, -9, -7, -6, -2, 0))
-                "]":
-                    dvga := (dvga + 1) <# 7
-                    cc2500.dvga_gain(lookupz(dvga: -3, -2, -1, 0))
-                "[":
-                    dvga := (dvga - 1) #> 0
-                    cc2500.dvga_gain(lookupz(dvga: -3, -2, -1, 0))
-                ";":
-                    _offset := (_offset - 1) #> 138
-                "'":
-                    _offset := (_offset + 1) <# 255
-                ".":
-                    rxbw := (rxbw + 1) <# 15
-                    cc2500.rx_bw(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, ...
-                                                325, 406, 464, 541, 650, 812))
-                ",":
-                    rxbw := (rxbw - 1) #> 0
-                    cc2500.rx_bw(lookupz(rxbw: 58, 68, 81, 102, 116, 135, 162, 203, 232, 270, ...
-                                                325, 406, 464, 541, 650, 812))
-                "p":
-                    intfreq := (intfreq + 25390) <# 787109
-                    cc2500.interm_freq(intfreq)
-                "o":
-                    intfreq := (intfreq - 25390) #> 25390
-                    cc2500.interm_freq(intfreq)
-                "s":
-                    _span := (_span - 10_000) #> 10_000
-                "S":
-                    _span := (_span + 10_000) <# 5_000_000
-                "b":
-                    _basefreq := (_basefreq - 500) #> 2_400_000
-                "B":
-                    _basefreq := (_basefreq + 500) <# 2_483_500
-                "d":
-                    _dly := (_dly-1) #> 0
-                    ser.printf("%d\n", _dly)
-
-                "D":
-                    _dly := (_dly+1) <# 1000
-                    ser.printf("%d\n", _dly)
-
-                other:
-            cc2500.rx_mode()
-            display_settings()                  ' Update the settings display
-
-PUB display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow
-
-    lna := cc2500.lna_gain()
-    dvga := cc2500.dvga_gain()
-    rxbw := cc2500.rx_bw()
-    ifreq := cc2500.interm_freq()
-
-    vga.fgcolor(255)
-    vga.pos_xy(0, 0)
-
-    vga.printf(@"%skHz   ", dec_sep(_basefreq, ","))
-    vga.printf(@"Span: %sHz", dec_sep(_span, ","))
-
-    startrow := (waterfall._bottom+8) / vga.font_height()
-
-    vga.pos_xy(LABEL_COL, startrow)
-    vga.printf(@"LNA Gain: ")
-    vga.pos_xy(DATA_COL, startrow)
-    vga.printf(@"%ddB ", lna)
-
-    vga.pos_xy(LABEL_COL, startrow+1)
-    vga.printf(@"DVGA Gain: ")
-    vga.pos_xy(DATA_COL, startrow+1)
-    vga.printf(@"%ddB ", dvga)
-
-    vga.pos_xy(LABEL_COL, startrow+2)
-    vga.printf(@"RX BW: ")
-    vga.pos_xy(DATA_COL, startrow+2)
-    vga.printf(@"%dkHz  ", rxbw)
-
-    vga.pos_xy(LABEL_COL, startrow+3)
-    vga.printf(@"IF: ")
-    vga.pos_xy(DATA_COL, startrow+3)
-    ifnot ( (ifreq / 1000) > (rxbw / 2) )
-        vga.fgcolor(190)
-    else
-        vga.fgcolor(255)
-    vga.printf(@"%dHz ", ifreq)
-    vga.fgcolor(255)
-
-pub acquire_rssi() | r, x
-
-    repeat x from 0 to (waterfall._width-2)
-        cc2500.carrier_freq(_basefreq + ((x*3350) / 1000) )
-'        ser.printf(@"f: %d\n\r", _basefreq + ((x*3350) / 1000) )
-        _rssi[x] := cc2500.rssi()+_offset
-'        ser.printf(@"x=%d  rssi=%d\n\r", x, _rssi[x])
-
-PRI draw_scale(x, y, ht) | idx, color, scl_width, bottom, top, range
-' Draw the color scale setup at program start
-    range := bottom := y+ht
-    top := y
-    scl_width := 5
-
-    repeat idx from bottom to top
-        color := (range-idx) * 2                                ' Skip every other color in the scale
-        vga.line(x, idx, x+scl_width, idx, color)               '   so most of it can be fit on screen
-
-PRI dec_sep(n, sep) | bills, mills, thous, hunds
-' Display a decimal number (unsigned int) with thousands separators
-'   n:          0..2147483647
-'   sep_char:   32..127 (ASCII character)
-    bytefill(@_strtemp, 0, 10)
-    if ( n >= 1_000_000_000 )
-        bills := (n / 1_000_000_000 )
-        mills := (n // 1_000_000_000 ) / (1_000_000)
-        thous := ((n // 1_000_000_000 ) // (1_000_000)) / 1_000
-        hunds := ((n // 1_000_000_000 ) // (1_000_000)) // 1_000
-        str.sprintf7(@_strtemp, @"%d%c%03.3d%c%03.3d%c%03.3d",  bills, sep, ...
-                                                                mills, sep, ...
-                                                                thous, sep, ...
-                                                                hunds)
-    elseif ( n >= 1_000_000 )
-        mills := (n / 1_000_000)
-        thous := ((n // 1_000_000 ) / (1_000))
-        hunds := ((n // 1_000_000 ) // (1_000))
-        str.sprintf5(@_strtemp, @"%d%c%03.3d%c%03.3d",  mills, sep, ...
-                                                        thous, sep, ...
-                                                        hunds)
-    elseif ( n >= 1_000 )
-        thous := (n / 1_000 )
-        hunds := (n // 1_000)
-        str.sprintf3(@_strtemp, @"%d%c%03.3d",  thous, sep, ...
-                                                hunds)
-    else
-        str.sprintf1(@_strtemp, @"%d", hunds)
-
-    return @_strtemp
-
-PUB setup()
-
-    ser.start(SER_BAUD)
-    ser.clear()
-    ser.strln(@"Serial terminal started")
-
-    if ( vga.start(VGA_BASEPIN, WIDTH, HEIGHT, @_framebuffer) )
-        vga.font_addr(fnt.ptr())
-        vga.font_scl(1)
-        vga.font_spacing(1, 0)
-        vga.font_sz(fnt.WIDTH, fnt.HEIGHT)
-        vga.clear()
-        ser.strln(@"VGA 8bpp driver started")
-        vga.char_attrs(vga.DRAWBG)
-    else
-        ser.strln(@"VGA 8bpp driver failed to start")
-        repeat
-
-    if ( cc2500.start() )
+    ' start the driver
+    if ( radio.start() )
         ser.strln(@"CC2500 driver started")
     else
         ser.strln(@"CC2500 driver failed to start - halting")
         repeat
 
-PUB grey_scale_palette() | i, ptr_pal
+    ' set up
+    radio.gpio0(radio.IO_HI_Z)
+    radio.idle()                               ' Change to Idle while changing settings
+    radio.auto_cal_mode(radio.IDLE_RXTX)
+    radio.carrier_freq(rf_config.start_freq)
+    radio.syncwd_mode(radio.SYNCMODE_3032_CS)
+    radio.carrier_sense_thresh(14)
+    radio.magn_target(24)
+    radio.agc_mode(radio.AGC_OFF)
+    radio.dc_block_ena(false)
+    radio.rx_mode()
 
-    ptr_pal := vga.palette_ptr()
-    repeat i from 0 to 255
-        long[ptr_pal][i] := 0 | (i << 16) | (i << 8) | i
+    rf_config.acq_delay := 50
+    rf_config.lnagain_idx := 7
+    rf_config.dvgagain_idx := 3
+    rf_config.rxbw_idx := 15
+    rf_config.interm_freq := 380_859
 
-PUB full_spec_palette() | i, r, g, b, c, ptr_pal
-' Set up palette
-    r := g := b := c := 0
-    ptr_pal := vga.palette_ptr()
-    repeat i from 0 to 255
-        c := 0 | (r << 16) | (g << 8) | b
-        long[ptr_pal][i] := c
-        case i
-            0..31:
-                r += 4
-                g := 0
-                b += 4
-            32..63:
-                r -= 4
-                g := 0
-                b := b
-            64..95:
-                r := 0
-                g += 4
-                b := b
-            96..127:
-                r := 0
-                g := g
-                b -= 4
-            128..159:
-                r += 4
-                g := g
-                b := b
-            160..191:
-                r := r
-                g -= 4
-                b := 0
-            192..253:
-                r := r
-                g += 4
-                b += 4
-            254..255:
-                r := g := b := 255
 
-DAT
+dat
+' Model-specific static data
+
+    ' gain, receive bandwidth LUTs
+    '                # values, val0, .., valn
+    lna_gains   long 8, -17, -14, -11, -9, -7, -6, -2, 0
+    dvga_gains  long 4, -3, -2, -1, 0
+    rx_bws      word 16, 812, 650, 541, 464, 406, 325, 270, 232, 203, 162, 135, 116, 102, 81, 68, 58
+
+    ' limits
+    rssi_offset byte 138
+    if_step     long 25390
+    if_freq_min long 25390
+    if_freq_max long 787109
+    freq_min    long 2_400_000                  ' kHz
+    freq_max    long 2_483_500
+    freq_step   long 1_000
+
+dat
 {
-Copyright 2023 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

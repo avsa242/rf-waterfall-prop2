@@ -138,10 +138,10 @@ pub application() | cmd, f, fs, grad
                     rf_config.span := (rf_config.span + 10_000) <# 5_000_000
                     rf_config.settings_changed := true
                 "b":
-                    rf_config.start_freq := (rf_config.start_freq - 50_000) #> freq_min
+                    rf_config.start_freq := (rf_config.start_freq - freq_step) #> freq_min
                     rf_config.settings_changed := true
                 "B":
-                    rf_config.start_freq := (rf_config.start_freq + 50_000) <# freq_max
+                    rf_config.start_freq := (rf_config.start_freq + freq_step) <# freq_max
                     rf_config.settings_changed := true
                 "d":
                     rf_config.acq_delay := (rf_config.acq_delay-1) #> 0

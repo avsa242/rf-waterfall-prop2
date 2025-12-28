@@ -90,6 +90,7 @@ dat
     if_freq_max long 787109
     freq_min    long 300_000_000
     freq_max    long 928_000_000
+    freq_step   long 50_000
 
 
 dat
