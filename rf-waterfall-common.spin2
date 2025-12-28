@@ -39,7 +39,8 @@ con
 
     struct gui_config_s(...
         long freq_pix_scl, ...
-        long freq_txt_scl)
+        long freq_txt_scl, ...
+        byte rssi_offset)
 
 
 var
@@ -47,12 +48,11 @@ var
     radio_config_s  rf_config
     gui_config_s    gui_config
     long            _cap
-    byte            _offset
 
 
 pub application() | cmd, f, fs, grad
 
-    _offset := rssi_offset
+    gui_config.rssi_offset := rssi_offset
 '    longfill(@_radio_stack, $aaaa_aaaa, RADIO_STACK_SZ)'xxx stack debugging
 
     ' set up the waterfall initial parameters
@@ -109,10 +109,10 @@ pub application() | cmd, f, fs, grad
                         rf_config.dvgagain_idx++
                     rf_config.settings_changed := true
                 ";":
-                    _offset := (_offset - 1) #> rssi_offset
+                    gui_config.rssi_offset := (gui_config.rssi_offset - 1) #> rssi_offset
                     rf_config.settings_changed := true
                 "'":
-                    _offset := (_offset + 1) <# 255
+                    gui_config.rssi_offset := (gui_config.rssi_offset + 1) <# 255
                     rf_config.settings_changed := true
                 ".":
                     rf_config.rxbw_idx++
@@ -239,19 +239,29 @@ pub cog_read_rssi() | i, freqstep, f
         repeat f from rf_config.start_freq to rf_config.start_freq+rf_config.span step freqstep
             radio.carrier_freq(f)
 '            waitus(rf_config.acq_delay)                            ' give RSSI time to settle
-            _rssi[i++] := (radio.rssi()+_offset)
+            _rssi[i++] := (radio.rssi()+gui_config.rssi_offset)
         _cap := true
 
 
-pri draw_scale(x, y, ht) | i, c, w, scl, ci
+pri draw_scale(x, y, ht) | i, c, w, scl, ci, b, srng, oscl, omkr
 ' Draw the color scale used by the waterfall
     w := 5
+    b := y+ht
+
     scl := (vga.MAX_COLOR+1)/ht                 ' scale color range to waterfall height
 
+    srng := b-y
+    oscl := ( ( (255-138)*1_000)/srng)          ' scale RSSI offset range to color scale range
+
     ci := 0
-    repeat i from (y+ht) to y                   ' draw from bottom to the top
+    repeat i from b to y                        ' draw from bottom to the top
         vga.line(x, i, x+w, i, (ci*scl) )
         ci++
+    ' draw a marker next to the scale indicating the current RSSI reference level
+    omkr := ( (gui_config.rssi_offset-138) ) * 1_000
+    vga.line(   x+w, b-(omkr / oscl), ...
+                x+w+5, b-(omkr / oscl), 255)
+
 
 
 var byte _tmp[15]
