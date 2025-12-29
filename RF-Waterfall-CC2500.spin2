@@ -64,7 +64,7 @@ pub radio_setup()
     radio.syncwd_mode(radio.SYNCMODE_3032_CS)
     radio.carrier_sense_thresh(14)
     radio.magn_target(24)
-    radio.agc_mode(radio.AGC_OFF)
+    radio.agc_mode(radio.AGC_NORMAL)
     radio.dc_block_ena(false)
     radio.rx_mode()
 

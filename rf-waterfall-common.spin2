@@ -197,8 +197,6 @@ pub display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, d
     gui_config.freq_pix_scl := rf_config.span/wfall._width
     gui_config.freq_txt_scl := rf_config.span/vga.text_cols()
 
-    rf_config.freq_step := (rf_config.span/wfall._width)
-
     ' draw graduations for frequency along the waterfall
     gn := 0
     repeat f from rf_config.start_freq to rf_config.end_freq step rf_config.freq_step
@@ -224,7 +222,6 @@ pub cog_read_rssi() | i, f
     rf_config.end_freq := rf_config.center_freq + (rf_config.span/2)
 
     radio_setup()
-    rf_config.freq_step := rf_config.span/wfall._width' calc step from ratio of freq span:spec plot width
     rf_config.settings_changed := true
 
     repeat
@@ -239,9 +236,8 @@ pub cog_read_rssi() | i, f
             radio.interm_freq(rf_config.interm_freq)
             radio.rx_mode()
             waitus(2000)
+            rf_config.freq_step := rf_config.span/wfall._width ' calc step from ratio of freq span:spec plot width
             rf_config.settings_changed := false
-
-        rf_config.freq_step := rf_config.span/wfall._width ' calc step from ratio of freq span:spec plot width
 
         i := 0
         rf_config.rssi_done := false
