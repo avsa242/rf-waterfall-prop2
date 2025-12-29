@@ -276,7 +276,7 @@ pub draw_spectrum_plot() | x
 ' Plot spectrum
     vga.box(0, wfall._sy-(vga.font_height()*5), wfall._width, wfall._sy, 0, true)
     repeat RSSI_CAPTURE_SZ with x
-        vga.plot(x, (wfall._sy-(_rssi[x]*1000)/gui_config.spec_scale), 255)
+        vga.plot(x, (wfall._sy-(_rssi[x]*1000)/gui_config.spec_scale), _rssi[x]+gui_config.rssi_offset)
 
 
 var byte _tmp[15]
