@@ -5,7 +5,7 @@
         * Common code (shared by all variants of the application)
     Author:         Jesse Burt
     Started:        Dec 28, 2025
-    Updated:        Dec 28, 2025
+    Updated:        Dec 29, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 
@@ -129,9 +129,11 @@ pub application() | cmd
                     rf_config.settings_changed := true
                 "b":
                     rf_config.start_freq := (rf_config.start_freq - freq_step) #> freq_min
+                    rf_config.end_freq := rf_config.start_freq + rf_config.span
                     rf_config.settings_changed := true
                 "B":
                     rf_config.start_freq := (rf_config.start_freq + freq_step) <# freq_max
+                    rf_config.end_freq := rf_config.start_freq + rf_config.span
                     rf_config.settings_changed := true
                 "d":
                     rf_config.acq_delay := (rf_config.acq_delay-1) #> 0
