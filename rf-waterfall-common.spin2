@@ -35,7 +35,9 @@ con
         long lnagain_idx, ...
         long dvgagain_idx, ...
         long rxbw_idx, ...
-        byte settings_changed)
+        long freq_step, ...
+        byte settings_changed, ...
+        byte rssi_done)
 
     struct gui_config_s(...
         long freq_pix_scl, ...
@@ -48,7 +50,6 @@ var
 
     radio_config_s  rf_config
     gui_config_s    gui_config
-    long            _cap
 
 
 pub application() | cmd
@@ -73,7 +74,7 @@ pub application() | cmd
     display_settings()
     repeat
         repeat
-        until _cap
+        until rf_config.rssi_done
         draw_spectrum_plot()
         wfall.draw()
         cmd := ser.getchar_noblock()
@@ -147,7 +148,7 @@ pub application() | cmd
             display_settings()                                   ' Update the settings display
 
 
-pub display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, dc, f, fs, grad, gn
+pub display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, dc, f, grad, gn
 ' Display the current application settings
 
     if ( rf_config.settings_changed )
@@ -196,11 +197,11 @@ pub display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, d
     gui_config.freq_pix_scl := rf_config.span/wfall._width
     gui_config.freq_txt_scl := rf_config.span/vga.text_cols()
 
-    fs := (rf_config.span/wfall._width)
+    rf_config.freq_step := (rf_config.span/wfall._width)
 
     ' draw graduations for frequency along the waterfall
     gn := 0
-    repeat f from rf_config.start_freq to rf_config.end_freq step fs
+    repeat f from rf_config.start_freq to rf_config.end_freq step rf_config.freq_step
         grad := (f-rf_config.start_freq) / gui_config.freq_pix_scl
         ifnot ( gn // 20 )
             vga.line(   grad, 3*vga.font_height(), ...
@@ -215,7 +216,7 @@ pub display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, d
 
 
 var long _radio_stack[RADIO_STACK_SZ], _rssi[RSSI_CAPTURE_SZ]
-pub cog_read_rssi() | i, freqstep, f
+pub cog_read_rssi() | i, f
 ' Acquire RSSI measurement for each frequency within the currently set span
 
     rf_config.span := 1_000_000                 ' Freq span from base freq
@@ -223,8 +224,7 @@ pub cog_read_rssi() | i, freqstep, f
     rf_config.end_freq := rf_config.center_freq + (rf_config.span/2)
 
     radio_setup()
-    freqstep := rf_config.span/wfall._width     ' calc step from ratio of freq span:spec plot width
-
+    rf_config.freq_step := rf_config.span/wfall._width' calc step from ratio of freq span:spec plot width
     rf_config.settings_changed := true
 
     repeat
@@ -241,15 +241,16 @@ pub cog_read_rssi() | i, freqstep, f
             waitus(2000)
             rf_config.settings_changed := false
 
-        freqstep := rf_config.span/wfall._width ' calc step from ratio of freq span:spec plot width
+        rf_config.freq_step := rf_config.span/wfall._width ' calc step from ratio of freq span:spec plot width
 
         i := 0
-        _cap := false
-        repeat f from rf_config.start_freq to rf_config.start_freq+rf_config.span step freqstep
+        rf_config.rssi_done := false
+        repeat f from rf_config.start_freq to rf_config.start_freq+rf_config.span ...
+        step rf_config.freq_step
             radio.carrier_freq(f)
             waitus(rf_config.acq_delay)         ' give RSSI time to settle
             _rssi[i++] := radio.rssi()+rssi_offset
-        _cap := true
+        rf_config.rssi_done := true
 
 
 pri draw_scale(x, y, ht) | i, c, w, scl, ci, b, srng, oscl, omkr
