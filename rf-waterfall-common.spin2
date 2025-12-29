@@ -36,6 +36,8 @@ con
         long dvgagain_idx, ...
         long rxbw_idx, ...
         long freq_step, ...
+        long max_rssi, ...
+        long min_rssi, ...
         byte settings_changed, ...
         byte rssi_done)
 
@@ -56,6 +58,8 @@ pub application() | cmd
 
     gui_config.rssi_offset := 0
     gui_config.spec_scale := (rssi_offset * 1_000) / 40
+    rf_config.min_rssi := posx
+    rf_config.max_rssi := negx
 '    longfill(@_radio_stack, $aaaa_aaaa, RADIO_STACK_SZ)'xxx stack debugging
 
     ' set up the waterfall initial parameters
@@ -144,6 +148,9 @@ pub application() | cmd
                     rf_config.acq_delay := (rf_config.acq_delay+1) <# 1000
                     ser.printf("%d\n\r", rf_config.acq_delay)
                     rf_config.settings_changed := true
+                "r":
+                    rf_config.min_rssi := posx
+                    rf_config.max_rssi := negx
                 other:
             display_settings()                                   ' Update the settings display
 
@@ -194,6 +201,12 @@ pub display_settings() | basefreq, span, lna, dvga, rxbw, ifreq, startrow, lc, d
     vga.fgcolor(255)
 
     draw_scale(wfall._right+5, wfall._sy, wfall._height)
+
+    ' draw min/max RSSI
+    vga.pos_xy(wfall._right-(vga.font_width()*12), wfall._bottom+vga.font_height() )
+    vga.printf(@"Max: %ddBm", rf_config.max_rssi-rssi_offset)
+    vga.pos_xy(wfall._right-(vga.font_width()*12), wfall._bottom+vga.font_height()*2 )
+    vga.printf(@"Min: %ddBm", rf_config.min_rssi-rssi_offset)
     gui_config.freq_pix_scl := rf_config.span/wfall._width
     gui_config.freq_txt_scl := rf_config.span/vga.text_cols()
 
@@ -245,7 +258,12 @@ pub cog_read_rssi() | i, f
         step rf_config.freq_step
             radio.carrier_freq(f)
             waitus(rf_config.acq_delay)         ' give RSSI time to settle
-            _rssi[i++] := radio.rssi()+rssi_offset
+            _rssi[i] := radio.rssi()+rssi_offset
+            if ( _rssi[i] < rf_config.min_rssi )
+                rf_config.min_rssi := _rssi[i]
+            if ( _rssi[i] > rf_config.max_rssi )
+                rf_config.max_rssi := _rssi[i]
+            i++
         rf_config.rssi_done := true
 
 
@@ -273,7 +291,9 @@ pub draw_spectrum_plot() | x
 ' Plot spectrum
     vga.box(0, wfall._sy-(vga.font_height()*5), wfall._width, wfall._sy, 0, true)
     repeat RSSI_CAPTURE_SZ with x
-        vga.plot(x, (wfall._sy-(_rssi[x]*1000)/gui_config.spec_scale), _rssi[x]+gui_config.rssi_offset)
+        vga.plot(   x, ...
+                    (wfall._sy-(_rssi[x]*1000)/gui_config.spec_scale), ...
+                    (_rssi[x]+gui_config.rssi_offset) )
 
 
 var byte _tmp[15]
