@@ -5,7 +5,7 @@
         * Common code (shared by all variants of the application)
     Author:         Jesse Burt
     Started:        Dec 28, 2025
-    Updated:        Dec 29, 2025
+    Updated:        Dec 30, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 
@@ -45,7 +45,8 @@ con
         long freq_pix_scl, ...
         long freq_txt_scl, ...
         long spec_scale, ...
-        byte rssi_offset)
+        byte rssi_offset, ...
+        byte throttle)
 
 
 var
@@ -58,6 +59,7 @@ pub application() | cmd
 
     gui_config.rssi_offset := 0
     gui_config.spec_scale := (rssi_offset * 1_000) / 40
+    gui_config.throttle := 1
     rf_config.min_rssi := posx
     rf_config.max_rssi := negx
 '    longfill(@_radio_stack, $aaaa_aaaa, RADIO_STACK_SZ)'xxx stack debugging
@@ -77,8 +79,9 @@ pub application() | cmd
 '        ser.hexdump_noascii(@_radio_stack, 0, 4, RADIO_STACK_SZ*4, 16)
     display_settings()
     repeat
-        repeat
-        until rf_config.rssi_done
+        if ( gui_config.throttle )
+            repeat
+            until rf_config.rssi_done
         draw_spectrum_plot()
         wfall.draw()
         cmd := ser.getchar_noblock()
@@ -151,6 +154,8 @@ pub application() | cmd
                 "r":
                     rf_config.min_rssi := posx
                     rf_config.max_rssi := negx
+                "t":
+                    gui_config.throttle ^= 1
                 other:
             display_settings()                                   ' Update the settings display
 
