@@ -156,6 +156,22 @@ pub application() | cmd
                     rf_config.max_rssi := negx
                 "t":
                     gui_config.throttle ^= 1
+                "h":
+                    vga.clear()
+                    vga.pos_xy(0, 0)
+                    vga.strln(@"Help:")
+                    vga.strln(@"- / =   Decrease/increase LNA gain")
+                    vga.strln(@"[ / ]   Decrease/increase DVGA gain")
+                    vga.strln(@"; / '   Decrease/increase waterfall plot ref. level")
+                    vga.strln(@"p / o   Decrease/increase intermediate frequency (IF)")
+                    vga.strln(@"s / S   Decrease/increase span")
+                    vga.strln(@"b / B   Decrease/increase sweep start frequency")
+                    vga.strln(@"d / D   Decrease/increase RSSI acquisition dwell time")
+                    vga.strln(@"r       Reset min/max RSSI seen")
+                    vga.strln(@"t       Toggle throttling of spectrum display")
+                    vga.strln(@"Hit ESC to go back")
+                    repeat
+                    until ser.getchar() == 27
                 other:
             display_settings()                                   ' Update the settings display
 
